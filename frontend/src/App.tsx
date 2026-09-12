@@ -36,6 +36,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState<SnapshotAnalysis | null>(null)
   const [variants, setVariants] = useState<VariantMeta[]>([])
   const [variantName, setVariantName] = useState('')
+  const [playing, setPlaying] = useState(false)
 
   const clients = useMemo(
     () => scenario?.ground_sites.filter((g) => g.role === 'client') ?? [],
@@ -61,9 +62,14 @@ export default function App() {
     if (clients.length && !clientId) setClientId(clients[0].id)
   }, [clients, clientId])
 
+  useEffect(() => {
+    if (tab !== 'network') setPlaying(false)
+  }, [tab])
+
   const loadBuiltin = async (filename: string) => {
     setBusy(true)
     setError(null)
+    setPlaying(false)
     try {
       const res = await Api.loadBuiltin(filename)
       setScenario(res.scenario)
@@ -82,6 +88,7 @@ export default function App() {
   const onUpload = async (file: File) => {
     setBusy(true)
     setError(null)
+    setPlaying(false)
     try {
       const res = await Api.upload(file)
       setScenario(res.scenario)
@@ -100,11 +107,13 @@ export default function App() {
     if (!scenario) return
     setBusy(true)
     setError(null)
+    setPlaying(false)
     try {
       const res = await Api.simulate()
       setSim(res)
       setTab('network')
       const snap = await Api.snapshot(0, clientId || undefined)
+      setTs(0)
       setAnalysis(snap)
     } catch (e) {
       setError(String((e as Error).message))
@@ -113,27 +122,46 @@ export default function App() {
     }
   }
 
-  const onTimeChange = async (next: number) => {
-    setTs(next)
-    if (!scenario) return
-    try {
-      const snap = await Api.snapshot(next, clientId || undefined)
-      setAnalysis(snap)
-    } catch (e) {
-      setError(String((e as Error).message))
-    }
+  const onTimeChange = useCallback(
+    async (next: number) => {
+      setTs(next)
+      if (!scenario) return
+      try {
+        const snap = await Api.snapshot(next, clientId || undefined)
+        setAnalysis(snap)
+      } catch (e) {
+        setError(String((e as Error).message))
+        setPlaying(false)
+      }
+    },
+    [scenario, clientId],
+  )
+
+  const onClientChange = useCallback(
+    async (cid: string) => {
+      setClientId(cid)
+      if (!scenario) return
+      try {
+        const snap = await Api.snapshot(t_s, cid)
+        setAnalysis(snap)
+      } catch (e) {
+        setError(String((e as Error).message))
+      }
+    },
+    [scenario, t_s],
+  )
+
+  const ensureNetworkShown = async () => {
+    if (analysis) return
+    await onTimeChange(0)
   }
 
-  const onClientChange = async (cid: string) => {
-    setClientId(cid)
-    if (!scenario) return
-    try {
-      const snap = await Api.snapshot(t_s, cid)
-      setAnalysis(snap)
-    } catch (e) {
-      setError(String((e as Error).message))
+  useEffect(() => {
+    if (tab === 'network' && scenario && !analysis) {
+      void ensureNetworkShown()
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, scenario])
 
   const saveVariant = async () => {
     setBusy(true)
@@ -150,9 +178,14 @@ export default function App() {
   }
 
   const routeInfo = clientId && analysis ? analysis.routes[clientId] : null
+  const routeLabel = routeInfo
+    ? routeInfo.reachable
+      ? `${routeInfo.path.join(' → ')} · hops ${routeInfo.hops}`
+      : routeInfo.outage_reason_label ?? 'перерыв связи'
+    : 'загрузка…'
 
   return (
-    <div className="app">
+    <div className={`app ${tab === 'network' ? 'app-network' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">ORBIS</span>
@@ -205,7 +238,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="main">
+      <main className={`main ${tab === 'network' ? 'main-network' : ''}`}>
         {tab === 'project' && (
           <section className="panel-grid">
             <div className="card-block">
@@ -343,68 +376,27 @@ export default function App() {
           </section>
         )}
 
-        {tab === 'network' && scenario && (
+        {tab === 'network' && scenario && analysis && (
           <section className="network">
-            <div className="network-controls">
-              <label>
-                Клиент
-                <select value={clientId} onChange={(e) => void onClientChange(e.target.value)}>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.id} — {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="timeline">
-                t = {formatTime(t_s)} ({t_s} с)
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(0, scenario.environment.horizon_s - scenario.environment.step_s)}
-                  step={scenario.environment.step_s}
-                  value={t_s}
-                  onChange={(e) => void onTimeChange(Number(e.target.value))}
-                />
-              </label>
-              {routeInfo && (
-                <div className="route-box">
-                  {routeInfo.reachable ? (
-                    <>
-                      <strong>Маршрут:</strong> {routeInfo.path.join(' → ')}
-                      <span className="muted">hops: {routeInfo.hops}</span>
-                    </>
-                  ) : (
-                    <>
-                      <strong>Перерыв связи</strong>
-                      <span>{routeInfo.outage_reason_label ?? 'маршрут не найден'}</span>
-                    </>
-                  )}
-                </div>
-              )}
-              {!sim && (
-                <p className="muted">
-                  Можно смотреть сеть без полного расчёта — нажмите «Запустить расчёт» для метрик за
-                  сутки.
-                </p>
-              )}
-              {!analysis && (
-                <button type="button" className="btn" onClick={() => void onTimeChange(0)}>
-                  Показать сеть
-                </button>
-              )}
-            </div>
-            {analysis && (
-              <ConstellationViewer
-                analysis={analysis}
-                clientId={clientId}
-                path={routeInfo?.path ?? []}
-              />
-            )}
-            {sim && clientId && (
-              <AvailabilityChart simulation={sim} clientId={clientId} currentT={t_s} />
-            )}
+            <ConstellationViewer
+              analysis={analysis}
+              clientId={clientId}
+              path={routeInfo?.path ?? []}
+              t_s={t_s}
+              step_s={scenario.environment.step_s}
+              horizon_s={scenario.environment.horizon_s}
+              simulation={sim}
+              playing={playing}
+              onPlayingChange={setPlaying}
+              onTimeChange={(t) => void onTimeChange(t)}
+              onSelectClient={(id) => void onClientChange(id)}
+              routeLabel={routeLabel}
+            />
           </section>
+        )}
+
+        {tab === 'network' && scenario && !analysis && (
+          <p className="muted pad">Загрузка сети…</p>
         )}
 
         {tab === 'network' && !scenario && (

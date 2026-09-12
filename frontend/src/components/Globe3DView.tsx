@@ -2,14 +2,17 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Line, Stars } from '@react-three/drei'
 import { useMemo } from 'react'
 import type { SnapshotAnalysis } from '../api'
+import type { ThreeEvent } from '@react-three/fiber'
 
 const R = 6371
-const SCALE = 1 / 1000 // km → scene units
+const SCALE = 1 / 1000
 
 type Props = {
   analysis: SnapshotAnalysis
   path: string[]
   pathSet: Set<string>
+  clientId: string
+  onSelectClient: (id: string) => void
 }
 
 function key(a: string, b: string) {
@@ -25,7 +28,7 @@ function Earth() {
   )
 }
 
-export function Globe3DView({ analysis, path, pathSet }: Props) {
+export function Globe3DView({ analysis, path, pathSet, clientId, onSelectClient }: Props) {
   const sats = analysis.snapshot.satellites
   const ground = analysis.ground_sites
   const byId = useMemo(() => {
@@ -39,7 +42,6 @@ export function Globe3DView({ analysis, path, pathSet }: Props) {
       const x = R * Math.cos(lat) * Math.cos(lon)
       const y = R * Math.cos(lat) * Math.sin(lon)
       const z = R * Math.sin(lat)
-      // Three.js Y-up: map ECEF (x,y,z) → (x, z, -y)
       m.set(g.id, [x * SCALE, z * SCALE, -y * SCALE])
     }
     return m
@@ -90,12 +92,28 @@ export function Globe3DView({ analysis, path, pathSet }: Props) {
         })}
         {ground.map((g) => {
           const p = byId.get(g.id)!
+          const selected = g.id === clientId
           return (
-            <mesh key={g.id} position={p}>
-              <sphereGeometry args={[0.09, 12, 12]} />
+            <mesh
+              key={g.id}
+              position={p}
+              onClick={
+                g.role === 'client'
+                  ? (e: ThreeEvent<MouseEvent>) => {
+                      e.stopPropagation()
+                      onSelectClient(g.id)
+                    }
+                  : undefined
+              }
+            >
+              <sphereGeometry args={[selected ? 0.12 : 0.09, 12, 12]} />
               <meshStandardMaterial
-                color={g.role === 'gateway' ? '#ae2012' : '#005f73'}
-                emissive={g.role === 'gateway' ? '#9b2226' : '#001219'}
+                color={
+                  selected ? '#e85d04' : g.role === 'gateway' ? '#ae2012' : '#005f73'
+                }
+                emissive={
+                  selected ? '#e85d04' : g.role === 'gateway' ? '#9b2226' : '#001219'
+                }
                 emissiveIntensity={0.4}
               />
             </mesh>

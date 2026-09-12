@@ -32,7 +32,7 @@
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/simulate` | полный прогон; ответ с metrics / availability / series + `result_id` |
+| POST | `/api/simulate` | полный прогон; тело `{ "seed": null\|int }` опционально; ответ с metrics / availability / series + `result_id` |
 | GET | `/api/simulation` | последний compact-результат сессии |
 | GET | `/api/results/{id}` | полный `cosmo-A-result-1.0` |
 | GET | `/api/results/{id}/download` | attachment |
@@ -69,6 +69,12 @@
   "effective_scenario": {},
   "routes": [{"t_s": 0, "client_id": "C65", "path": []}],
   "metrics": {},
-  "summary": {}
+  "summary": {
+    "target_availability": 0.9,
+    "failure_probability": 0.0,
+    "random_seed": null
+  }
 }
 ```
+
+Опциональное поле сценария `environment.failure_probability` (0…1): на каждом шаге независимый Bernoulli-отказ активных КА. Seed в теле simulate воспроизводит прогон.

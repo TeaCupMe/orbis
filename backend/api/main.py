@@ -61,6 +61,10 @@ class SnapshotQuery(BaseModel):
     client_id: str | None = None
 
 
+class SimulateBody(BaseModel):
+    seed: int | None = None
+
+
 def _require_scenario() -> dict:
     if _state["scenario"] is None:
         raise HTTPException(400, "Сценарий не загружен")
@@ -198,9 +202,10 @@ def delete_variant(variant_id: str):
 
 
 @app.post("/api/simulate")
-def simulate():
+def simulate(body: SimulateBody = SimulateBody()):
     sc = _require_scenario()
-    sim = run_simulation(sc)
+    seed = body.seed
+    sim = run_simulation(sc, seed=seed)
     result = build_result_export(sc, sim)
     rid = store.save_result(result)
     # Компактный ответ для UI (без полного routes dump в теле — он огромный)
@@ -216,6 +221,8 @@ def simulate():
         "step_s": sim["step_s"],
         "horizon_s": sim["horizon_s"],
         "summary": result["summary"],
+        "failure_probability": sim.get("failure_probability", 0.0),
+        "random_seed": sim.get("random_seed"),
     }
     _state["simulation"] = compact
     _state["result_id"] = rid

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import numpy as np
+
 from .geometry import snapshot
 from .metrics import client_metrics_from_reachability, time_grid
 from .routing import OUTAGE_LABELS_RU, classify_outage, find_route
@@ -19,6 +21,33 @@ def _ids(scenario: dict) -> tuple[set[str], set[str], list[str]]:
     gateways = {g["id"] for g in scenario["ground_sites"] if g["role"] == "gateway"}
     clients = [g["id"] for g in scenario["ground_sites"] if g["role"] == "client"]
     return sat_ids, gateways, clients
+
+
+def _bernoulli_failed(
+    scenario: dict,
+    t_s: float,
+    p: float,
+    rng: np.random.Generator,
+) -> set[str]:
+    """
+    Независимый отказ на текущем шаге для КА, которые иначе были бы активны
+    (launch_batch <= launch_stage и нет детерминированного failure).
+
+    NOTE: отказ действует только на этот шаг — следующий бросок независим.
+    """
+    if p <= 0:
+        return set()
+    d = scenario["design"]
+    det = {
+        f["satellite_id"] for f in scenario["failures"] if f["start_s"] <= t_s < f["end_s"]
+    }
+    out: set[str] = set()
+    for sat in d["satellites"]:
+        if sat["launch_batch"] > d["launch_stage"] or sat["id"] in det:
+            continue
+        if rng.random() < p:
+            out.add(sat["id"])
+    return out
 
 
 def analyze_timestep(
@@ -58,23 +87,20 @@ def analyze_timestep(
 def run_simulation(
     scenario: dict,
     progress: Callable[[float], None] | None = None,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """
     Расчёт на всём горизонте.
 
-    Возвращает:
-      times          — сетка t_s
-      metrics        — сводка по каждому client
-      availability   — {client_id: [bool, ...]} сквозная достижимость
-      visibility     — {client_id: [bool, ...]}
-      routes         — список записей {t_s, client_id, path} (формат выгрузки)
-      hop_series     — {client_id: [hops|None, ...]}
-      outage_series  — {client_id: [reason|None, ...]}
+    Если environment.failure_probability > 0 — на каждом шаге независимые
+    Bernoulli-отказы КА (см. _bernoulli_failed). seed воспроизводит прогон.
     """
     e = scenario["environment"]
     step_s = e["step_s"]
     times = time_grid(e["horizon_s"], step_s)
     sat_ids, gateways, clients = _ids(scenario)
+    p = float(e.get("failure_probability") or 0.0)
+    rng = np.random.default_rng(seed) if p > 0 else None
 
     visibility: dict[str, list[bool]] = {c: [] for c in clients}
     reachability: dict[str, list[bool]] = {c: [] for c in clients}
@@ -86,7 +112,8 @@ def run_simulation(
     min_el = e["min_elevation_deg"]
 
     for i, t_s in enumerate(times):
-        snap = snapshot(scenario, float(t_s))
+        extra = _bernoulli_failed(scenario, float(t_s), p, rng) if rng is not None else None
+        snap = snapshot(scenario, float(t_s), extra_failed=extra)
         for cid in clients:
             elev = snap.get("elevation_deg", {}).get(cid, {})
             vis = any(el >= min_el for el in elev.values())
@@ -121,24 +148,30 @@ def run_simulation(
         "target_availability": e["target_availability"],
         "step_s": step_s,
         "horizon_s": e["horizon_s"],
+        "failure_probability": p,
+        "random_seed": seed if p > 0 else None,
     }
 
 
 def build_result_export(scenario: dict, sim: dict[str, Any]) -> dict[str, Any]:
     """Формат выгрузки cosmo-A-result-1.0."""
+    summary = {
+        "target_availability": sim["target_availability"],
+        "step_s": sim["step_s"],
+        "horizon_s": sim["horizon_s"],
+        "clients_meeting_target": [
+            cid
+            for cid, m in sim["metrics"].items()
+            if m["availability_ratio"] >= sim["target_availability"]
+        ],
+        "failure_probability": sim.get("failure_probability", 0.0),
+    }
+    if sim.get("random_seed") is not None:
+        summary["random_seed"] = sim["random_seed"]
     return {
         "schema_version": "cosmo-A-result-1.0",
         "effective_scenario": scenario,
         "routes": sim["routes"],
         "metrics": sim["metrics"],
-        "summary": {
-            "target_availability": sim["target_availability"],
-            "step_s": sim["step_s"],
-            "horizon_s": sim["horizon_s"],
-            "clients_meeting_target": [
-                cid
-                for cid, m in sim["metrics"].items()
-                if m["availability_ratio"] >= sim["target_availability"]
-            ],
-        },
+        "summary": summary,
     }

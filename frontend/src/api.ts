@@ -24,6 +24,8 @@ export type Scenario = {
     min_elevation_deg: number
     isl_range_km: number
     target_availability: number
+    /** Опционально: вероятность отказа КА на каждом шаге [0..1] */
+    failure_probability?: number
   }
   design: {
     launch_stage: number
@@ -146,7 +148,12 @@ export const Api = {
       body: JSON.stringify(edits),
     }),
   reset: () => api<{ ok: boolean; scenario: Scenario }>('/api/scenario/reset', { method: 'POST' }),
-  simulate: () => api<Simulation>('/api/simulate', { method: 'POST' }),
+  simulate: (seed?: number | null) =>
+    api<Simulation>('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ seed: seed ?? null }),
+    }),
   getSimulation: () => api<Simulation>('/api/simulation'),
   snapshot: (t_s: number, client_id?: string) =>
     api<SnapshotAnalysis>('/api/snapshot', {

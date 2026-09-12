@@ -1,15 +1,38 @@
 import { useMemo, useState } from 'react'
-import type { SnapshotAnalysis } from '../api'
+import type { SnapshotAnalysis, Simulation } from '../api'
 import { Map2DView } from './Map2DView'
 import { Globe3DView } from './Globe3DView'
+import { TimeScrubber } from './TimeScrubber'
 
 type Props = {
   analysis: SnapshotAnalysis
   clientId: string
   path: string[]
+  t_s: number
+  step_s: number
+  horizon_s: number
+  simulation: Simulation | null
+  playing: boolean
+  onPlayingChange: (playing: boolean) => void
+  onTimeChange: (t: number) => void
+  onSelectClient: (id: string) => void
+  routeLabel: string
 }
 
-export function ConstellationViewer({ analysis, clientId, path }: Props) {
+export function ConstellationViewer({
+  analysis,
+  clientId,
+  path,
+  t_s,
+  step_s,
+  horizon_s,
+  simulation,
+  playing,
+  onPlayingChange,
+  onTimeChange,
+  onSelectClient,
+  routeLabel,
+}: Props) {
   const [mode, setMode] = useState<'2d' | '3d'>('2d')
 
   const pathSet = useMemo(() => {
@@ -42,19 +65,43 @@ export function ConstellationViewer({ analysis, clientId, path }: Props) {
           </button>
         </div>
         <div className="legend">
+          <span className="hint">ЛКМ по клиенту — маршрут</span>
           <span className="dot active-sat" /> активный КА
           <span className="dot inactive-sat" /> неактивный
-          <span className="dot ground" /> наземный пункт
+          <span className="dot ground" /> наземный
           <span className="line route" /> маршрут
-          <span className="line isl" /> ISL
         </div>
+        <span className="client-chip">клиент: {clientId || '—'}</span>
       </div>
       <div className="viewer-stage">
         {mode === '2d' ? (
-          <Map2DView analysis={analysis} path={path} pathSet={pathSet} clientId={clientId} />
+          <Map2DView
+            analysis={analysis}
+            path={path}
+            pathSet={pathSet}
+            clientId={clientId}
+            onSelectClient={onSelectClient}
+          />
         ) : (
-          <Globe3DView analysis={analysis} path={path} pathSet={pathSet} />
+          <Globe3DView
+            analysis={analysis}
+            path={path}
+            pathSet={pathSet}
+            clientId={clientId}
+            onSelectClient={onSelectClient}
+          />
         )}
+        <TimeScrubber
+          t_s={t_s}
+          step_s={step_s}
+          horizon_s={horizon_s}
+          simulation={simulation}
+          clientId={clientId}
+          playing={playing}
+          onPlayingChange={onPlayingChange}
+          onTimeChange={onTimeChange}
+          routeLabel={routeLabel}
+        />
       </div>
     </div>
   )

@@ -7,13 +7,14 @@ type Props = {
   path: string[]
   pathSet: Set<string>
   clientId: string
+  onSelectClient: (id: string) => void
 }
 
 function key(a: string, b: string) {
   return [a, b].sort().join('|')
 }
 
-export function Map2DView({ analysis, path, pathSet, clientId }: Props) {
+export function Map2DView({ analysis, path, pathSet, clientId, onSelectClient }: Props) {
   const sats = analysis.snapshot.satellites
   const byId = new Map(sats.map((s) => [s.id, s]))
   const ground = analysis.ground_sites
@@ -31,11 +32,9 @@ export function Map2DView({ analysis, path, pathSet, clientId }: Props) {
     const pa = posOf(a)
     const pb = posOf(b)
     if (!pa || !pb) continue
-    // skip very long wrap-around clutter optionally — keep all for accuracy
     islLines.push({ positions: [pa, pb], route: pathSet.has(key(a, b)) })
   }
 
-  // draw route on top even if missing from edges somehow
   const routeLine = path
     .map((id) => posOf(id))
     .filter((p): p is [number, number] => p != null)
@@ -94,15 +93,28 @@ export function Map2DView({ analysis, path, pathSet, clientId }: Props) {
         <CircleMarker
           key={g.id}
           center={[g.lat_deg, g.lon_deg]}
-          radius={7}
+          radius={g.id === clientId ? 9 : 7}
+          eventHandlers={
+            g.role === 'client'
+              ? {
+                  click: (e) => {
+                    e.originalEvent.stopPropagation()
+                    onSelectClient(g.id)
+                  },
+                }
+              : undefined
+          }
           pathOptions={{
             color: g.id === clientId ? '#e85d04' : g.role === 'gateway' ? '#9b2226' : '#001219',
-            fillColor: g.role === 'gateway' ? '#ae2012' : '#005f73',
+            fillColor:
+              g.id === clientId ? '#e85d04' : g.role === 'gateway' ? '#ae2012' : '#005f73',
             fillOpacity: 1,
+            weight: g.id === clientId ? 3 : 1,
           }}
         >
           <Tooltip>
             {g.id} ({g.role}) — {g.name}
+            {g.role === 'client' ? ' · клик: маршрут' : ''}
           </Tooltip>
         </CircleMarker>
       ))}

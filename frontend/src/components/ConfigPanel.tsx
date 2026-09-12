@@ -14,12 +14,14 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
   const [satId, setSatId] = useState(scenario.design.satellites[0]?.id ?? '')
   const [failStart, setFailStart] = useState(21600)
   const [failEnd, setFailEnd] = useState(86400)
+  const [failProb, setFailProb] = useState(scenario.environment.failure_probability ?? 0)
 
   useEffect(() => {
     setLaunchStage(scenario.design.launch_stage)
     setPlanes(scenario.design.planes.map((p) => ({ ...p })))
     setFailures(scenario.failures.map((f) => ({ ...f })))
     setSatId(scenario.design.satellites[0]?.id ?? '')
+    setFailProb(scenario.environment.failure_probability ?? 0)
   }, [scenario])
 
   return (
@@ -33,6 +35,22 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
           <option value={3}>3 — все 48 КА</option>
         </select>
       </label>
+
+      <label>
+        Вероятность отказа аппарата (опционально)
+        <input
+          type="number"
+          min={0}
+          max={1}
+          step={0.01}
+          value={failProb}
+          onChange={(e) => setFailProb(Number(e.target.value))}
+        />
+      </label>
+      <p className="muted tiny">
+        На каждом шаге каждый активный КА независимо отказывает с этой вероятностью (только на
+        этот шаг). 0 — выкл.; прогон становится стохастическим.
+      </p>
 
       <h3>Плоскости</h3>
       {planes.map((p, idx) => (
@@ -126,6 +144,7 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
             void onApply({
               design: { launch_stage: launchStage, planes },
               failures,
+              environment: { failure_probability: failProb },
             })
           }
         >

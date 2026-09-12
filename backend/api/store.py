@@ -63,8 +63,9 @@ def apply_edits(scenario: dict, edits: dict[str, Any]) -> dict:
     if "meta" in edits and isinstance(edits["meta"], dict):
         s.setdefault("meta", {}).update(edits["meta"])
     if "environment" in edits and isinstance(edits["environment"], dict):
+        allowed_new = {"failure_probability"}
         for k, v in edits["environment"].items():
-            if k in s["environment"]:
+            if k in s["environment"] or k in allowed_new:
                 s["environment"][k] = v
     if "design" in edits and isinstance(edits["design"], dict):
         d = edits["design"]

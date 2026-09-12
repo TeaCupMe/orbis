@@ -64,6 +64,11 @@ def validate(s: dict) -> None:
         and (0 <= e["target_availability"] <= 1)
     ):
         raise ValueError("Invalid link/target values")
+    # Опциональное расширение ORBIS: Bernoulli-отказ КА на каждом шаге
+    if "failure_probability" in e:
+        fp = e["failure_probability"]
+        if not finite(fp) or not (0 <= fp <= 1):
+            raise ValueError("failure_probability must be in [0, 1]")
     planes = {p["id"]: p for p in d["planes"]}
     if len(planes) != len(d["planes"]) or not planes:
         raise ValueError("Duplicate/empty planes")
@@ -191,7 +196,7 @@ def ecef_to_lat_lon(x_km: float, y_km: float, z_km: float) -> tuple[float, float
     return lat, lon
 
 
-def snapshot(s: dict, t_s: float) -> dict:
+def snapshot(s: dict, t_s: float, extra_failed: set[str] | None = None) -> dict:
     """
     Состояние сети в момент t_s.
 
@@ -201,7 +206,9 @@ def snapshot(s: dict, t_s: float) -> dict:
     - elevation_deg: углы возвышения активных КА для каждого ground site
 
     Активность КА:
-      active ⇔ launch_batch <= launch_stage  И  нет отказа на [start_s, end_s).
+      active ⇔ launch_batch <= launch_stage
+               И нет отказа на [start_s, end_s)
+               И id не в extra_failed (стохастические отказы на шаг).
 
     ISL между активными a, b доступен, если:
       ‖b − a‖ < isl_range_km
@@ -221,6 +228,8 @@ def snapshot(s: dict, t_s: float) -> dict:
     failed = {
         f["satellite_id"] for f in s["failures"] if f["start_s"] <= t_s < f["end_s"]
     }
+    if extra_failed:
+        failed |= set(extra_failed)
     active = np.array(
         [
             sat["launch_batch"] <= d["launch_stage"] and sat["id"] not in failed

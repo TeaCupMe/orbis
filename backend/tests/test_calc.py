@@ -92,3 +92,27 @@ def test_short_horizon_simulation():
     for m in sim["metrics"].values():
         assert 0 <= m["availability_ratio"] <= 1
         assert m["steps"] == 10
+
+
+def test_failure_probability_one_kills_links():
+    s = load(SCENARIO)
+    s["environment"]["horizon_s"] = 1200
+    s["environment"]["step_s"] = 120
+    s["environment"]["failure_probability"] = 1.0
+    sim = run_simulation(s, seed=0)
+    for m in sim["metrics"].values():
+        assert m["availability_ratio"] == 0.0
+        assert m["visibility_ratio"] == 0.0
+
+
+def test_failure_probability_zero_matches_baseline():
+    s = load(SCENARIO)
+    s["environment"]["horizon_s"] = 1200
+    s["environment"]["step_s"] = 120
+    base = run_simulation(s)
+    s2 = load(SCENARIO)
+    s2["environment"]["horizon_s"] = 1200
+    s2["environment"]["step_s"] = 120
+    s2["environment"]["failure_probability"] = 0.0
+    with_p = run_simulation(s2, seed=42)
+    assert base["availability"] == with_p["availability"]
