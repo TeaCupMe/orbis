@@ -112,7 +112,7 @@ export default function App() {
       const res = await Api.simulate()
       setSim(res)
       setTab('network')
-      const snap = await Api.snapshot(0, clientId || undefined)
+      const snap = await Api.snapshot(0)
       setTs(0)
       setAnalysis(snap)
     } catch (e) {
@@ -127,29 +127,19 @@ export default function App() {
       setTs(next)
       if (!scenario) return
       try {
-        const snap = await Api.snapshot(next, clientId || undefined)
+        const snap = await Api.snapshot(next)
         setAnalysis(snap)
       } catch (e) {
         setError(String((e as Error).message))
         setPlaying(false)
       }
     },
-    [scenario, clientId],
+    [scenario],
   )
 
-  const onClientChange = useCallback(
-    async (cid: string) => {
-      setClientId(cid)
-      if (!scenario) return
-      try {
-        const snap = await Api.snapshot(t_s, cid)
-        setAnalysis(snap)
-      } catch (e) {
-        setError(String((e as Error).message))
-      }
-    },
-    [scenario, t_s],
-  )
+  const onClientChange = useCallback((cid: string) => {
+    setClientId(cid)
+  }, [])
 
   const ensureNetworkShown = async () => {
     if (analysis) return
@@ -390,11 +380,14 @@ export default function App() {
               t_s={t_s}
               step_s={scenario.environment.step_s}
               horizon_s={scenario.environment.horizon_s}
+              minElevationDeg={scenario.environment.min_elevation_deg}
+              failures={scenario.failures}
+              gatewayOutages={scenario.gateway_outages}
               simulation={sim}
               playing={playing}
               onPlayingChange={setPlaying}
               onTimeChange={(t) => void onTimeChange(t)}
-              onSelectClient={(id) => void onClientChange(id)}
+              onSelectClient={onClientChange}
               routeLabel={routeLabel}
             />
           </section>

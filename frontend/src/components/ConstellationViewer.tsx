@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Api, type CoverageGrid, type SnapshotAnalysis, type Simulation } from '../api'
+import {
+  Api,
+  type CoverageGrid,
+  type SnapshotAnalysis,
+  type Simulation,
+  type Scenario,
+} from '../api'
 import { Map2DView } from './Map2DView'
 import { Globe3DView } from './Globe3DView'
 import { TimeScrubber } from './TimeScrubber'
+import { MapLegendOverlay } from './MapLegendOverlay'
+import { MapStatsOverlay } from './MapStatsOverlay'
 
 type Props = {
   analysis: SnapshotAnalysis
@@ -11,6 +19,9 @@ type Props = {
   t_s: number
   step_s: number
   horizon_s: number
+  minElevationDeg: number
+  failures: Scenario['failures']
+  gatewayOutages: Scenario['gateway_outages']
   simulation: Simulation | null
   playing: boolean
   onPlayingChange: (playing: boolean) => void
@@ -26,6 +37,9 @@ export function ConstellationViewer({
   t_s,
   step_s,
   horizon_s,
+  minElevationDeg,
+  failures,
+  gatewayOutages,
   simulation,
   playing,
   onPlayingChange,
@@ -37,6 +51,7 @@ export function ConstellationViewer({
   const [viewLayer, setViewLayer] = useState<'network' | 'coverage'>('network')
   const [coverage, setCoverage] = useState<CoverageGrid | null>(null)
   const [coverageBusy, setCoverageBusy] = useState(false)
+  const [selectedSatId, setSelectedSatId] = useState<string | null>(null)
   const cacheRef = useRef<Map<number, CoverageGrid>>(new Map())
 
   const pathSet = useMemo(() => {
@@ -48,6 +63,14 @@ export function ConstellationViewer({
     }
     return edges
   }, [path])
+
+  const onSelectSat = (id: string) => {
+    setSelectedSatId((prev) => (prev === id ? null : id))
+  }
+
+  useEffect(() => {
+    if (viewLayer !== 'network') setSelectedSatId(null)
+  }, [viewLayer])
 
   useEffect(() => {
     if (viewLayer !== 'coverage') return
@@ -78,7 +101,6 @@ export function ConstellationViewer({
     }
   }, [viewLayer, t_s])
 
-  // invalidate coverage cache when analysis scenario identity changes (new sats positions source)
   useEffect(() => {
     cacheRef.current.clear()
   }, [analysis.ground_sites, analysis.snapshot.satellites.length])
@@ -87,6 +109,50 @@ export function ConstellationViewer({
     coverage && viewLayer === 'coverage'
       ? `покрытие ${(coverage.covered_fraction * 100).toFixed(1)}%`
       : null
+
+  const satNeighbors = useMemo(() => {
+    if (!selectedSatId) return [] as string[]
+    const satIds = new Set(analysis.snapshot.satellites.map((s) => s.id))
+    const n = new Set<string>()
+    for (const [a, b] of analysis.snapshot.edges) {
+      if (a === selectedSatId && satIds.has(b)) n.add(b)
+      if (b === selectedSatId && satIds.has(a)) n.add(a)
+    }
+    return [...n]
+  }, [selectedSatId, analysis.snapshot.edges, analysis.snapshot.satellites])
+
+  const liveStats = useMemo(() => {
+    const sats = analysis.snapshot.satellites
+    const failedIds = new Set(
+      failures
+        .filter((f) => f.start_s <= t_s && t_s < f.end_s)
+        .map((f) => f.satellite_id),
+    )
+    const failedSats = sats.filter((s) => failedIds.has(s.id)).length
+    const activeSats = sats.filter((s) => s.active).length
+
+    const clients = analysis.ground_sites.filter((g) => g.role === 'client')
+    const gateways = analysis.ground_sites.filter((g) => g.role === 'gateway')
+    const clientsReachable = clients.filter(
+      (g) => analysis.routes[g.id]?.reachable,
+    ).length
+    const offlineGw = new Set(
+      gatewayOutages
+        .filter((f) => f.start_s <= t_s && t_s < f.end_s)
+        .map((f) => f.gateway_id),
+    )
+    const gatewaysOnline = gateways.filter((g) => !offlineGw.has(g.id)).length
+
+    return {
+      failedSats,
+      activeSats,
+      totalSats: sats.length,
+      clientsReachable,
+      clientsTotal: clients.length,
+      gatewaysOnline,
+      gatewaysTotal: gateways.length,
+    }
+  }, [analysis, failures, gatewayOutages, t_s])
 
   return (
     <div className="viewer">
@@ -123,25 +189,6 @@ export function ConstellationViewer({
             Покрытие
           </button>
         </div>
-        <div className="legend">
-          {viewLayer === 'network' ? (
-            <>
-              <span className="hint">ЛКМ по клиенту — маршрут</span>
-              <span className="dot active-sat" /> активный КА
-              <span className="dot ground" /> наземный
-              <span className="line route" /> маршрут
-            </>
-          ) : (
-            <>
-              <span className="hint">теплокарта: видимость ≥1 КА</span>
-              {coverageBusy && <span className="muted">считаем…</span>}
-              {coverPct && <span>{coverPct}</span>}
-            </>
-          )}
-        </div>
-        {viewLayer === 'network' && (
-          <span className="client-chip">клиент: {clientId || '—'}</span>
-        )}
       </div>
       <div className="viewer-stage">
         {mode === '2d' ? (
@@ -151,6 +198,9 @@ export function ConstellationViewer({
             pathSet={pathSet}
             clientId={clientId}
             onSelectClient={onSelectClient}
+            selectedSatId={selectedSatId}
+            onSelectSat={onSelectSat}
+            minElevationDeg={minElevationDeg}
             viewLayer={viewLayer}
             coverage={coverage}
           />
@@ -161,10 +211,24 @@ export function ConstellationViewer({
             pathSet={pathSet}
             clientId={clientId}
             onSelectClient={onSelectClient}
+            selectedSatId={selectedSatId}
+            onSelectSat={onSelectSat}
+            minElevationDeg={minElevationDeg}
             viewLayer={viewLayer}
             coverage={coverage}
           />
         )}
+        <div className="map-side-panels">
+          <MapLegendOverlay
+            viewLayer={viewLayer}
+            clientId={clientId}
+            selectedSatId={selectedSatId}
+            satNeighborCount={satNeighbors.length}
+            coverageBusy={coverageBusy}
+            coverPct={coverPct}
+          />
+          <MapStatsOverlay {...liveStats} />
+        </div>
         <TimeScrubber
           t_s={t_s}
           step_s={step_s}
