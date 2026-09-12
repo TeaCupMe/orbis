@@ -1,8 +1,9 @@
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, Line, Stars } from '@react-three/drei'
-import { useMemo } from 'react'
+import { OrbitControls, Line, Stars, useTexture } from '@react-three/drei'
+import { Suspense, useMemo } from 'react'
 import type { SnapshotAnalysis } from '../api'
 import type { ThreeEvent } from '@react-three/fiber'
+import * as THREE from 'three'
 
 const R = 6371
 const SCALE = 1 / 1000
@@ -20,6 +21,23 @@ function key(a: string, b: string) {
 }
 
 function Earth() {
+  const colorMap = useTexture('/earth.jpg')
+  colorMap.colorSpace = THREE.SRGBColorSpace
+  colorMap.anisotropy = 8
+
+  return (
+    <mesh>
+      <sphereGeometry args={[R * SCALE, 96, 96]} />
+      <meshStandardMaterial
+        map={colorMap}
+        roughness={0.9}
+        metalness={0.05}
+      />
+    </mesh>
+  )
+}
+
+function EarthFallback() {
   return (
     <mesh>
       <sphereGeometry args={[R * SCALE, 64, 64]} />
@@ -62,10 +80,12 @@ export function Globe3DView({ analysis, path, pathSet, clientId, onSelectClient 
     <div className="globe3d">
       <Canvas camera={{ position: [0, 4, 14], fov: 45 }}>
         <color attach="background" args={['#050d14']} />
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[10, 12, 8]} intensity={1.1} />
+        <ambientLight intensity={0.45} />
+        <directionalLight position={[8, 6, 10]} intensity={1.35} />
         <Stars radius={80} depth={40} count={2500} factor={3} saturation={0} fade />
-        <Earth />
+        <Suspense fallback={<EarthFallback />}>
+          <Earth />
+        </Suspense>
         {isl
           .filter((l) => !l.route)
           .map((l, i) => (
