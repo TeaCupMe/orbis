@@ -38,7 +38,64 @@
 | GET | `/api/results/{id}/download` | attachment |
 | POST | `/api/snapshot` | `{ t_s, client_id? }` → snapshot + routes + ground_sites |
 | POST | `/api/coverage` | `{ t_s, lat_step_deg?, lon_step_deg? }` → теплокарта мгновенного покрытия |
-| POST | `/api/compare` | `{ variant_a, variant_b }` → metrics diff + recommendation |
+| POST | `/api/compare` | `{ variant_a, variant_b, seed? }` → metrics + param_diff + recommendation |
+
+### Compare (фрагмент ответа)
+
+```json
+{
+  "variant_a": { "id": "…", "name": "…" },
+  "variant_b": { "id": "…", "name": "…" },
+  "seed": 0,
+  "target_availability": 0.9,
+  "param_diff": {
+    "launch_stage": { "a": 3, "b": 1 },
+    "isl_range_km": { "a": 3000, "b": 2000 },
+    "step_s": { "a": 120, "b": 120 },
+    "horizon_s": { "a": 86400, "b": 86400 },
+    "min_elevation_deg": { "a": 10, "b": 10 },
+    "failure_probability": { "a": 0, "b": 0 },
+    "failures_count": { "a": 0, "b": 2 },
+    "gateway_outages_count": { "a": 0, "b": 0 },
+    "ground_sites_count": {
+      "a": { "clients": 3, "gateways": 2, "total": 5 },
+      "b": { "clients": 3, "gateways": 2, "total": 5 }
+    },
+    "planes": { "a": {}, "b": {} }
+  },
+  "metrics": {
+    "C65": {
+      "a": { "visibility_ratio": 0.9, "availability_ratio": 0.85, "max_outage_s": 1200, "mean_hops": 3.1, "steps": 720 },
+      "b": { "visibility_ratio": 0.7, "availability_ratio": 0.6, "max_outage_s": 3600, "mean_hops": 2.8, "steps": 720 }
+    }
+  },
+  "recommendation": {
+    "preferred": "a",
+    "preferred_name": "…",
+    "clients_meeting_target": ["C65"],
+    "summary": {
+      "mean_availability": { "a": 0.85, "b": 0.6 },
+      "max_outage_s": { "a": 1200, "b": 3600 },
+      "clients_meeting": { "a": ["C65"], "b": [] }
+    },
+    "text": "Рекомендуется вариант «…»…"
+  },
+  "timeline": {
+    "a": {
+      "times": [0, 120, 240],
+      "step_s": 120,
+      "horizon_s": 86400,
+      "levels": ["full", "partial", "none"],
+      "counts": { "full": 1, "partial": 1, "none": 1 }
+    },
+    "b": { "times": [], "step_s": 120, "horizon_s": 86400, "levels": [], "counts": { "full": 0, "partial": 0, "none": 0 } }
+  }
+}
+```
+
+`timeline.*.levels` на каждом шаге: `full` — маршрут у всех клиентов, `partial` — у части, `none` — ни у кого.
+
+Оба прогона используют один `seed` (по умолчанию `0`), чтобы стохастические отказы были сопоставимы.
 
 ### Snapshot (фрагмент ответа)
 

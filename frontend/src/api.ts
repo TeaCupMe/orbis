@@ -122,6 +122,42 @@ export type VariantMeta = {
   saved_at?: string
 }
 
+export type CompareSide = { a: number; b: number }
+
+export type CompareFleetTimeline = {
+  times: number[]
+  step_s: number
+  horizon_s: number
+  levels: Array<'full' | 'partial' | 'none'>
+  counts: { full: number; partial: number; none: number }
+}
+
+export type CompareResult = {
+  variant_a: { id: string; name: string }
+  variant_b: { id: string; name: string }
+  param_diff: Record<string, unknown>
+  metrics: Record<string, { a: ClientMetrics | null; b: ClientMetrics | null }>
+  target_availability: number
+  seed: number
+  recommendation: {
+    preferred: 'a' | 'b'
+    preferred_name: string
+    mean_availability: number
+    max_outage_s: number
+    clients_meeting_target: string[]
+    text: string
+    summary: {
+      mean_availability: CompareSide
+      max_outage_s: CompareSide
+      clients_meeting: { a: string[]; b: string[] }
+    }
+  }
+  timeline: {
+    a: CompareFleetTimeline
+    b: CompareFleetTimeline
+  }
+}
+
 const BASE = import.meta.env.VITE_API_BASE ?? ''
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -191,18 +227,13 @@ export const Api = {
   listVariants: () => api<VariantMeta[]>('/api/variants'),
   loadVariant: (id: string) =>
     api<{ ok: boolean; scenario: Scenario }>(`/api/variants/${id}/load`, { method: 'POST' }),
-  compare: (variant_a: string, variant_b: string) =>
-    api<{
-      variant_a: { id: string; name: string }
-      variant_b: { id: string; name: string }
-      param_diff: Record<string, unknown>
-      metrics: Record<string, { a: ClientMetrics; b: ClientMetrics }>
-      target_availability: number
-      recommendation: { text: string; preferred_name: string; clients_meeting_target: string[] }
-    }>('/api/compare', {
+  deleteVariant: (id: string) =>
+    api<{ ok: boolean }>(`/api/variants/${id}`, { method: 'DELETE' }),
+  compare: (variant_a: string, variant_b: string, seed: number | null = 0) =>
+    api<CompareResult>('/api/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variant_a, variant_b }),
+      body: JSON.stringify({ variant_a, variant_b, seed }),
     }),
   downloadResultUrl: (id: string) => `${BASE}/api/results/${id}/download`,
   downloadScenarioUrl: () => `${BASE}/api/scenario/download`,

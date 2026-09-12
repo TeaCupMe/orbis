@@ -56,6 +56,7 @@ class SaveVariantBody(BaseModel):
 class CompareBody(BaseModel):
     variant_a: str
     variant_b: str
+    seed: int | None = 0
 
 
 class SnapshotQuery(BaseModel):
@@ -304,23 +305,54 @@ def compare(body: CompareBody):
     except FileNotFoundError as exc:
         raise HTTPException(404, f"Вариант не найден: {exc}")
 
-    sim_a = run_simulation(a["scenario"])
-    sim_b = run_simulation(b["scenario"])
+    seed = body.seed if body.seed is not None else 0
+    sim_a = run_simulation(a["scenario"], seed=seed)
+    sim_b = run_simulation(b["scenario"], seed=seed)
 
     def plane_map(sc):
-        return {p["id"]: {"raan_deg": p["raan_deg"], "phase_deg": p["phase_deg"]} for p in sc["design"]["planes"]}
+        return {
+            p["id"]: {"raan_deg": p["raan_deg"], "phase_deg": p["phase_deg"]}
+            for p in sc["design"]["planes"]
+        }
 
+    def ground_counts(sc):
+        sites = sc.get("ground_sites", [])
+        return {
+            "clients": sum(1 for g in sites if g.get("role") == "client"),
+            "gateways": sum(1 for g in sites if g.get("role") == "gateway"),
+            "total": len(sites),
+        }
+
+    ea, eb = a["scenario"]["environment"], b["scenario"]["environment"]
     param_diff = {
         "launch_stage": {
             "a": a["scenario"]["design"]["launch_stage"],
             "b": b["scenario"]["design"]["launch_stage"],
         },
-        "isl_range_km": {
-            "a": a["scenario"]["environment"]["isl_range_km"],
-            "b": b["scenario"]["environment"]["isl_range_km"],
+        "isl_range_km": {"a": ea["isl_range_km"], "b": eb["isl_range_km"]},
+        "step_s": {"a": ea["step_s"], "b": eb["step_s"]},
+        "horizon_s": {"a": ea["horizon_s"], "b": eb["horizon_s"]},
+        "min_elevation_deg": {
+            "a": ea["min_elevation_deg"],
+            "b": eb["min_elevation_deg"],
+        },
+        "failure_probability": {
+            "a": float(ea.get("failure_probability") or 0.0),
+            "b": float(eb.get("failure_probability") or 0.0),
         },
         "planes": {"a": plane_map(a["scenario"]), "b": plane_map(b["scenario"])},
-        "failures_count": {"a": len(a["scenario"]["failures"]), "b": len(b["scenario"]["failures"])},
+        "failures_count": {
+            "a": len(a["scenario"]["failures"]),
+            "b": len(b["scenario"]["failures"]),
+        },
+        "gateway_outages_count": {
+            "a": len(a["scenario"].get("gateway_outages", [])),
+            "b": len(b["scenario"].get("gateway_outages", [])),
+        },
+        "ground_sites_count": {
+            "a": ground_counts(a["scenario"]),
+            "b": ground_counts(b["scenario"]),
+        },
     }
 
     clients = sorted(set(sim_a["metrics"]) | set(sim_b["metrics"]))
@@ -339,12 +371,61 @@ def compare(body: CompareBody):
         "param_diff": param_diff,
         "metrics": metrics_cmp,
         "target_availability": target,
+        "seed": seed,
         "recommendation": recommendation,
+        "timeline": {
+            "a": _fleet_availability_timeline(sim_a),
+            "b": _fleet_availability_timeline(sim_b),
+        },
+    }
+
+
+def _fleet_availability_timeline(sim: dict) -> dict:
+    """
+    Пошаговый статус по всем клиентам:
+      full — маршрут есть у всех клиентов
+      partial — у части клиентов
+      none — ни у кого
+    """
+    avail = sim.get("availability") or {}
+    times = sim.get("times") or []
+    clients = sorted(avail.keys())
+    n = len(times)
+    levels: list[str] = []
+    if not clients or n == 0:
+        return {
+            "times": times,
+            "step_s": sim.get("step_s"),
+            "horizon_s": sim.get("horizon_s"),
+            "levels": levels,
+            "counts": {"full": 0, "partial": 0, "none": 0},
+        }
+
+    full = partial = none = 0
+    for i in range(n):
+        ok = sum(1 for c in clients if i < len(avail[c]) and avail[c][i])
+        if ok <= 0:
+            levels.append("none")
+            none += 1
+        elif ok >= len(clients):
+            levels.append("full")
+            full += 1
+        else:
+            levels.append("partial")
+            partial += 1
+
+    return {
+        "times": times,
+        "step_s": sim.get("step_s"),
+        "horizon_s": sim.get("horizon_s"),
+        "levels": levels,
+        "counts": {"full": full, "partial": partial, "none": none},
     }
 
 
 def _recommend(a, b, sim_a, sim_b, target: float) -> dict:
     """Простая текстовая рекомендация по среднему availability и max outage."""
+
     def score(sim):
         mets = list(sim["metrics"].values())
         if not mets:
@@ -353,26 +434,36 @@ def _recommend(a, b, sim_a, sim_b, target: float) -> dict:
         outage = max(m["max_outage_s"] for m in mets)
         return avail, outage
 
+    def meeting_list(sim):
+        return [
+            cid
+            for cid, m in sim["metrics"].items()
+            if m["availability_ratio"] >= target
+        ]
+
     avail_a, out_a = score(sim_a)
     avail_b, out_b = score(sim_b)
+    meet_a = meeting_list(sim_a)
+    meet_b = meeting_list(sim_b)
+
     # Лучше выше availability; при равенстве — меньше max outage
     if (avail_a, -out_a) >= (avail_b, -out_b):
         winner, wname, wavail, wout = "a", a["name"], avail_a, out_a
         other_avail, other_out = avail_b, out_b
+        meeting = meet_a
+        other_meeting_n = len(meet_b)
     else:
         winner, wname, wavail, wout = "b", b["name"], avail_b, out_b
         other_avail, other_out = avail_a, out_a
+        meeting = meet_b
+        other_meeting_n = len(meet_a)
 
-    meeting = [
-        cid
-        for cid, m in (sim_a if winner == "a" else sim_b)["metrics"].items()
-        if m["availability_ratio"] >= target
-    ]
     text = (
         f"Рекомендуется вариант «{wname}»: средняя доступность {wavail*100:.1f}% "
         f"(у альтернативы {other_avail*100:.1f}%), макс. перерыв {wout} с "
         f"(у альтернативы {other_out} с). "
-        f"Цели {target*100:.0f}% достигают пункты: {', '.join(meeting) or 'ни один'}."
+        f"Цели {target*100:.0f}% достигают {len(meeting)} пунктов "
+        f"(у альтернативы {other_meeting_n}): {', '.join(meeting) or 'ни один'}."
     )
     return {
         "preferred": winner,
@@ -381,6 +472,11 @@ def _recommend(a, b, sim_a, sim_b, target: float) -> dict:
         "max_outage_s": wout,
         "clients_meeting_target": meeting,
         "text": text,
+        "summary": {
+            "mean_availability": {"a": avail_a, "b": avail_b},
+            "max_outage_s": {"a": out_a, "b": out_b},
+            "clients_meeting": {"a": meet_a, "b": meet_b},
+        },
     }
 
 

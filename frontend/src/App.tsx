@@ -10,18 +10,9 @@ import { ConstellationViewer } from './components/ConstellationViewer'
 import { AvailabilityChart } from './components/AvailabilityChart'
 import { ComparePanel } from './components/ComparePanel'
 import { ConfigPanel } from './components/ConfigPanel'
+import { formatTime, pct } from './format'
 
 type Tab = 'project' | 'network' | 'compare'
-
-function pct(x: number) {
-  return `${(x * 100).toFixed(1)}%`
-}
-
-function formatTime(s: number) {
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  return `${h}ч ${m.toString().padStart(2, '0')}м`
-}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('project')
@@ -216,7 +207,9 @@ export default function App() {
           ))}
         </nav>
         <div className="top-actions">
-          {busy && <span className="busy">Считаем…</span>}
+          <span className={`busy${busy ? ' is-on' : ''}`} aria-live="polite">
+            {busy ? 'Считаем…' : ''}
+          </span>
           {scenario && (
             <>
               <button type="button" className="btn ghost" onClick={runSim} disabled={busy}>
@@ -419,7 +412,27 @@ export default function App() {
         )}
 
         {tab === 'compare' && (
-          <ComparePanel variants={variants} onRefresh={refreshVariants} />
+          <ComparePanel
+            variants={variants}
+            onRefresh={refreshVariants}
+            onLoadVariant={async (id) => {
+              setBusy(true)
+              setError(null)
+              try {
+                const res = await Api.loadVariant(id)
+                setScenario(res.scenario)
+                setSource(`variant:${id}`)
+                setSim(null)
+                setAnalysis(null)
+                setPlaying(false)
+                setTab('project')
+              } catch (e) {
+                setError(String((e as Error).message))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          />
         )}
       </main>
     </div>
