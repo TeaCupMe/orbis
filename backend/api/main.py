@@ -18,6 +18,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from api import store  # noqa: E402
+from calc.coverage import coverage_grid  # noqa: E402
 from calc.geometry import ecef_to_lat_lon  # noqa: E402
 from calc.simulation import analyze_timestep, build_result_export, run_simulation  # noqa: E402
 
@@ -45,6 +46,7 @@ class EditsBody(BaseModel):
     design: dict | None = None
     failures: list | None = None
     gateway_outages: list | None = None
+    ground_sites: list | None = None
 
 
 class SaveVariantBody(BaseModel):
@@ -63,6 +65,12 @@ class SnapshotQuery(BaseModel):
 
 class SimulateBody(BaseModel):
     seed: int | None = None
+
+
+class CoverageBody(BaseModel):
+    t_s: float = 0
+    lat_step_deg: float = 2.0
+    lon_step_deg: float = 2.0
 
 
 def _require_scenario() -> dict:
@@ -275,6 +283,17 @@ def get_snapshot(body: SnapshotQuery):
     analysis["snapshot"] = _enrich_snapshot(analysis["snapshot"])
     analysis["ground_sites"] = sc["ground_sites"]
     return analysis
+
+
+@app.post("/api/coverage")
+def get_coverage(body: CoverageBody):
+    sc = _require_scenario()
+    try:
+        return coverage_grid(sc, body.t_s, body.lat_step_deg, body.lon_step_deg)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.post("/api/compare")

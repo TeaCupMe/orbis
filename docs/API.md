@@ -12,7 +12,7 @@
 | POST | `/api/scenarios/load/{filename}` | загрузить демо в сессию |
 | POST | `/api/scenarios/upload` | multipart `file` — свой JSON |
 | GET | `/api/scenario` | текущий сценарий |
-| POST | `/api/scenario/edit` | правки `{ design, failures, gateway_outages, environment, meta }` |
+| POST | `/api/scenario/edit` | правки `{ design, failures, gateway_outages, ground_sites, environment, meta }` |
 | POST | `/api/scenario/reset` | сброс к исходному builtin |
 | GET | `/api/scenario/download` | выгрузка текущего JSON |
 
@@ -37,6 +37,7 @@
 | GET | `/api/results/{id}` | полный `cosmo-A-result-1.0` |
 | GET | `/api/results/{id}/download` | attachment |
 | POST | `/api/snapshot` | `{ t_s, client_id? }` → snapshot + routes + ground_sites |
+| POST | `/api/coverage` | `{ t_s, lat_step_deg?, lon_step_deg? }` → теплокарта мгновенного покрытия |
 | POST | `/api/compare` | `{ variant_a, variant_b }` → metrics diff + recommendation |
 
 ### Snapshot (фрагмент ответа)
@@ -78,3 +79,21 @@
 ```
 
 Опциональное поле сценария `environment.failure_probability` (0…1): на каждом шаге независимый Bernoulli-отказ активных КА. Seed в теле simulate воспроизводит прогон.
+
+### Coverage
+
+```json
+{
+  "t_s": 0,
+  "lat_step_deg": 2,
+  "lon_step_deg": 2,
+  "lats": [89, 87, "..."],
+  "lons": [-179, -177, "..."],
+  "values": [[0, 1, 1], "..."],
+  "elevation_max_deg": [["..."]],
+  "covered_fraction": 0.42,
+  "active_satellites": 48
+}
+```
+
+`values[i][j] = 1`, если в центре ячейки есть ≥1 активный КА с elevation ≥ `min_elevation_deg`.

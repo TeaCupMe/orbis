@@ -287,6 +287,11 @@ export default function App() {
                     const res = await Api.edit(edits)
                     setScenario(res.scenario)
                     setSim(null)
+                    const nextClients = res.scenario.ground_sites.filter((g) => g.role === 'client')
+                    if (!nextClients.some((c) => c.id === clientId)) {
+                      setClientId(nextClients[0]?.id ?? '')
+                    }
+                    setAnalysis(null)
                   } catch (e) {
                     setError(String((e as Error).message))
                   } finally {

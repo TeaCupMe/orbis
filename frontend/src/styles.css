@@ -265,6 +265,27 @@ select {
   margin-bottom: 0.35rem;
 }
 
+.site-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr 5.5rem 4.5rem 4.5rem auto;
+  gap: 0.35rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.site-row input,
+.site-row select {
+  min-width: 0;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.4rem;
+}
+
+@media (max-width: 900px) {
+  .site-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .variant-list,
 .failure-list {
   list-style: none;

@@ -101,6 +101,18 @@ export type SnapshotAnalysis = {
   ground_sites: GroundSite[]
 }
 
+export type CoverageGrid = {
+  t_s: number
+  lat_step_deg: number
+  lon_step_deg: number
+  lats: number[]
+  lons: number[]
+  values: number[][]
+  elevation_max_deg: number[][]
+  covered_fraction: number
+  active_satellites: number
+}
+
 export type VariantMeta = {
   variant_id: string
   name: string
@@ -160,6 +172,12 @@ export const Api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ t_s, client_id: client_id ?? null }),
+    }),
+  coverage: (t_s: number, lat_step_deg = 2, lon_step_deg = 2) =>
+    api<CoverageGrid>('/api/coverage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ t_s, lat_step_deg, lon_step_deg }),
     }),
   saveVariant: (name?: string) =>
     api<VariantMeta>('/api/variants', {

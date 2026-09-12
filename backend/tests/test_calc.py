@@ -116,3 +116,31 @@ def test_failure_probability_zero_matches_baseline():
     s2["environment"]["failure_probability"] = 0.0
     with_p = run_simulation(s2, seed=42)
     assert base["availability"] == with_p["availability"]
+
+
+def test_coverage_grid_inactive_zero():
+    from calc.coverage import coverage_grid
+
+    s = load(SCENARIO)
+    s["design"]["launch_stage"] = 1
+    # force all sats inactive via failures covering whole horizon
+    s["failures"] = [
+        {"satellite_id": sat["id"], "start_s": 0, "end_s": s["environment"]["horizon_s"]}
+        for sat in s["design"]["satellites"]
+    ]
+    grid = coverage_grid(s, 0.0, lat_step_deg=5.0, lon_step_deg=5.0)
+    assert grid["active_satellites"] == 0
+    assert grid["covered_fraction"] == 0.0
+    assert all(v == 0 for row in grid["values"] for v in row)
+
+
+def test_coverage_grid_full_has_north():
+    from calc.coverage import coverage_grid
+
+    s = load(SCENARIO)
+    grid = coverage_grid(s, 0.0, lat_step_deg=5.0, lon_step_deg=5.0)
+    assert grid["active_satellites"] == 48
+    assert grid["covered_fraction"] > 0
+    # northern band: first few rows (high lat)
+    north = grid["values"][:6]
+    assert any(v > 0 for row in north for v in row)

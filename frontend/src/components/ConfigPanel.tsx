@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Scenario } from '../api'
+import type { GroundSite, Scenario } from '../api'
 
 type Props = {
   scenario: Scenario
@@ -7,10 +7,18 @@ type Props = {
   onReset: () => Promise<void>
 }
 
+function nextSiteId(sites: GroundSite[], prefix: string): string {
+  let n = 1
+  const used = new Set(sites.map((s) => s.id))
+  while (used.has(`${prefix}${n}`)) n += 1
+  return `${prefix}${n}`
+}
+
 export function ConfigPanel({ scenario, onApply, onReset }: Props) {
   const [launchStage, setLaunchStage] = useState(scenario.design.launch_stage)
   const [planes, setPlanes] = useState(scenario.design.planes.map((p) => ({ ...p })))
   const [failures, setFailures] = useState(scenario.failures.map((f) => ({ ...f })))
+  const [sites, setSites] = useState(scenario.ground_sites.map((g) => ({ ...g })))
   const [satId, setSatId] = useState(scenario.design.satellites[0]?.id ?? '')
   const [failStart, setFailStart] = useState(21600)
   const [failEnd, setFailEnd] = useState(86400)
@@ -20,9 +28,19 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
     setLaunchStage(scenario.design.launch_stage)
     setPlanes(scenario.design.planes.map((p) => ({ ...p })))
     setFailures(scenario.failures.map((f) => ({ ...f })))
+    setSites(scenario.ground_sites.map((g) => ({ ...g })))
     setSatId(scenario.design.satellites[0]?.id ?? '')
     setFailProb(scenario.environment.failure_probability ?? 0)
   }, [scenario])
+
+  const clientCount = sites.filter((s) => s.role === 'client').length
+  const gatewayCount = sites.filter((s) => s.role === 'gateway').length
+
+  const canRemove = (g: GroundSite) => {
+    if (g.role === 'client') return clientCount > 1
+    if (g.role === 'gateway') return gatewayCount > 1
+    return true
+  }
 
   return (
     <div className="card-block">
@@ -89,6 +107,117 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
         </div>
       ))}
 
+      <h3>Наземные станции</h3>
+      <p className="muted tiny">Нужен ≥1 client и ≥1 gateway. Id должны быть уникальны.</p>
+      {sites.map((g, idx) => (
+        <div className="site-row" key={`${g.id}-${idx}`}>
+          <input
+            value={g.id}
+            title="id"
+            onChange={(e) => {
+              const next = [...sites]
+              next[idx] = { ...g, id: e.target.value }
+              setSites(next)
+            }}
+          />
+          <input
+            value={g.name}
+            title="name"
+            onChange={(e) => {
+              const next = [...sites]
+              next[idx] = { ...g, name: e.target.value }
+              setSites(next)
+            }}
+          />
+          <select
+            value={g.role}
+            onChange={(e) => {
+              const next = [...sites]
+              next[idx] = { ...g, role: e.target.value as GroundSite['role'] }
+              setSites(next)
+            }}
+          >
+            <option value="client">client</option>
+            <option value="gateway">gateway</option>
+          </select>
+          <input
+            type="number"
+            step={0.01}
+            min={-90}
+            max={90}
+            value={g.lat_deg}
+            title="lat"
+            onChange={(e) => {
+              const next = [...sites]
+              next[idx] = { ...g, lat_deg: Number(e.target.value) }
+              setSites(next)
+            }}
+          />
+          <input
+            type="number"
+            step={0.01}
+            min={-180}
+            max={180}
+            value={g.lon_deg}
+            title="lon"
+            onChange={(e) => {
+              const next = [...sites]
+              next[idx] = { ...g, lon_deg: Number(e.target.value) }
+              setSites(next)
+            }}
+          />
+          <button
+            type="button"
+            className="linkish"
+            disabled={!canRemove(g)}
+            title={
+              !canRemove(g) ? 'Нельзя удалить последнего client/gateway' : 'Удалить'
+            }
+            onClick={() => setSites(sites.filter((_, j) => j !== idx))}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <div className="row wrap">
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() =>
+            setSites([
+              ...sites,
+              {
+                id: nextSiteId(sites, 'C'),
+                name: 'New client',
+                role: 'client',
+                lat_deg: 70,
+                lon_deg: 60,
+              },
+            ])
+          }
+        >
+          + client
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() =>
+            setSites([
+              ...sites,
+              {
+                id: nextSiteId(sites, 'G'),
+                name: 'New gateway',
+                role: 'gateway',
+                lat_deg: 69,
+                lon_deg: 33,
+              },
+            ])
+          }
+        >
+          + gateway
+        </button>
+      </div>
+
       <h3>Отказы спутников</h3>
       <div className="row wrap">
         <select value={satId} onChange={(e) => setSatId(e.target.value)}>
@@ -144,6 +273,7 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
             void onApply({
               design: { launch_stage: launchStage, planes },
               failures,
+              ground_sites: sites,
               environment: { failure_probability: failProb },
             })
           }

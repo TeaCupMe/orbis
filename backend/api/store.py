@@ -57,7 +57,7 @@ def apply_edits(scenario: dict, edits: dict[str, Any]) -> dict:
     """
     Применить правки из UI к копии сценария.
     Поддерживаемые поля: design.launch_stage, design.planes[], failures, gateway_outages,
-    environment (частично), meta.title.
+    ground_sites, environment (частично), meta.title.
     """
     s = deepcopy(scenario)
     if "meta" in edits and isinstance(edits["meta"], dict):
@@ -83,6 +83,8 @@ def apply_edits(scenario: dict, edits: dict[str, Any]) -> dict:
         s["failures"] = edits["failures"]
     if "gateway_outages" in edits:
         s["gateway_outages"] = edits["gateway_outages"]
+    if "ground_sites" in edits:
+        s["ground_sites"] = edits["ground_sites"]
     validate(s)
     return s
 
