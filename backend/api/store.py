@@ -66,7 +66,10 @@ def apply_edits(scenario: dict, edits: dict[str, Any]) -> dict:
         allowed_new = {"failure_probability"}
         for k, v in edits["environment"].items():
             if k in s["environment"] or k in allowed_new:
-                s["environment"][k] = v
+                if k in {"step_s", "horizon_s"}:
+                    s["environment"][k] = int(v)
+                else:
+                    s["environment"][k] = v
     if "design" in edits and isinstance(edits["design"], dict):
         d = edits["design"]
         if "launch_stage" in d:

@@ -59,18 +59,65 @@ select {
   z-index: 20;
 }
 
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  display: block;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
 .brand-mark {
   font-family: var(--display);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   font-size: 1.35rem;
+  line-height: 1;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.brand-dot {
+  color: var(--accent);
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.brand-team {
+  display: block;
+  height: 1.55rem;
+  width: auto;
+  max-width: min(260px, 42vw);
+  object-fit: contain;
+  object-position: left center;
 }
 
 .brand-sub {
   display: block;
   color: var(--muted);
   font-size: 0.78rem;
-  margin-top: 0.15rem;
+  line-height: 1.2;
 }
 
 .tabs {
@@ -119,6 +166,17 @@ select {
   background: transparent;
   color: var(--ink);
   border: 1px solid var(--line);
+}
+
+.btn.compact {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.btn.active-preset {
+  border-color: var(--accent);
+  color: var(--accent-2);
 }
 
 .btn:disabled {

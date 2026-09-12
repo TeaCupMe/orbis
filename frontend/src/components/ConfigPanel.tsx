@@ -23,6 +23,8 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
   const [failStart, setFailStart] = useState(21600)
   const [failEnd, setFailEnd] = useState(86400)
   const [failProb, setFailProb] = useState(scenario.environment.failure_probability ?? 0)
+  const [stepS, setStepS] = useState(scenario.environment.step_s)
+  const [islRangeKm, setIslRangeKm] = useState(scenario.environment.isl_range_km)
 
   useEffect(() => {
     setLaunchStage(scenario.design.launch_stage)
@@ -31,6 +33,8 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
     setSites(scenario.ground_sites.map((g) => ({ ...g })))
     setSatId(scenario.design.satellites[0]?.id ?? '')
     setFailProb(scenario.environment.failure_probability ?? 0)
+    setStepS(scenario.environment.step_s)
+    setIslRangeKm(scenario.environment.isl_range_km)
   }, [scenario])
 
   const clientCount = sites.filter((s) => s.role === 'client').length
@@ -68,6 +72,65 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
       <p className="muted tiny">
         На каждом шаге каждый ещё активный КА может отказать с этой вероятностью и остаётся
         неактивным до конца горизонта. 0 — выкл.
+      </p>
+
+      <label>
+        Шаг симуляции, с
+        <input
+          type="number"
+          min={1}
+          max={scenario.environment.horizon_s}
+          step={1}
+          value={stepS}
+          onChange={(e) => setStepS(Math.max(1, Math.round(Number(e.target.value)) || 1))}
+        />
+      </label>
+      <div className="row wrap">
+        {[60, 120, 300, 600, 1800, 3600].map((s) => (
+          <button
+            key={s}
+            type="button"
+            className={`btn ghost compact${stepS === s ? ' active-preset' : ''}`}
+            disabled={scenario.environment.horizon_s % s !== 0}
+            onClick={() => setStepS(s)}
+          >
+            {s < 60 ? `${s} с` : s % 3600 === 0 ? `${s / 3600} ч` : s % 60 === 0 ? `${s / 60} мин` : `${s} с`}
+          </button>
+        ))}
+      </div>
+      <p className="muted tiny">
+        Горизонт {scenario.environment.horizon_s} с должен делиться на шаг без остатка. Сейчас шагов:{' '}
+        {scenario.environment.horizon_s % stepS === 0
+          ? Math.floor(scenario.environment.horizon_s / stepS)
+          : '— (не делится)'}
+        .
+      </p>
+
+      <label>
+        Дальность ISL (КА–КА), км
+        <input
+          type="number"
+          min={1}
+          max={10000}
+          step={50}
+          value={islRangeKm}
+          onChange={(e) => setIslRangeKm(Number(e.target.value))}
+        />
+      </label>
+      <div className="row wrap">
+        {[1500, 2000, 2500, 3000, 4000, 5000].map((km) => (
+          <button
+            key={km}
+            type="button"
+            className={`btn ghost compact${islRangeKm === km ? ' active-preset' : ''}`}
+            onClick={() => setIslRangeKm(km)}
+          >
+            {km} км
+          </button>
+        ))}
+      </div>
+      <p className="muted tiny">
+        Максимальное расстояние межспутниковой связи. Допустимо (0; 10000] км.
       </p>
 
       <h3>Плоскости</h3>
@@ -274,7 +337,11 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
               design: { launch_stage: launchStage, planes },
               failures,
               ground_sites: sites,
-              environment: { failure_probability: failProb },
+              environment: {
+                failure_probability: failProb,
+                step_s: stepS,
+                isl_range_km: islRangeKm,
+              },
             })
           }
         >
@@ -284,10 +351,7 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
           Сброс
         </button>
       </div>
-      <p className="muted tiny">
-        isl_range={scenario.environment.isl_range_km} км · elev≥
-        {scenario.environment.min_elevation_deg}°
-      </p>
+      <p className="muted tiny">elev ≥ {scenario.environment.min_elevation_deg}°</p>
     </div>
   )
 }

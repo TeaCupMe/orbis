@@ -178,8 +178,24 @@ export default function App() {
     <div className={`app ${tab === 'network' ? 'app-network' : ''}`}>
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">ORBIS</span>
-          <span className="brand-sub">проектирование устойчивой группировки</span>
+          <div className="brand-lockup" aria-label="ORBIS">
+            <img className="brand-logo" src="/Logo_Blue.svg" alt="" width={40} height={40} />
+            <div className="brand-text">
+              <div className="brand-title-row">
+                <span className="brand-mark">Orbis</span>
+                <span className="brand-dot" aria-hidden>
+                  ·
+                </span>
+                <img
+                  className="brand-team"
+                  src="/Title_BlackYellow.svg"
+                  alt="название команды"
+                  height={22}
+                />
+              </div>
+              <span className="brand-sub">проектирование устойчивой группировки</span>
+            </div>
+          </div>
         </div>
         <nav className="tabs">
           {(
@@ -282,6 +298,8 @@ export default function App() {
                       setClientId(nextClients[0]?.id ?? '')
                     }
                     setAnalysis(null)
+                    setTs(0)
+                    setPlaying(false)
                   } catch (e) {
                     setError(String((e as Error).message))
                   } finally {
