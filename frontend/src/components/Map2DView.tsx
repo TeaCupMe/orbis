@@ -8,6 +8,7 @@ import {
   footprintHalfAngleRad,
   footprintRingLatLon,
 } from '../footprint'
+import { useMedia } from '../useMedia'
 
 type Props = {
   analysis: SnapshotAnalysis
@@ -43,6 +44,9 @@ export function Map2DView({
   const byId = new Map(sats.map((s) => [s.id, s]))
   const ground = analysis.ground_sites
   const showNetwork = viewLayer === 'network'
+  const touchFriendly = useMedia('(max-width: 480px), (pointer: coarse)')
+  const satR = touchFriendly ? 4 : 0
+  const groundR = touchFriendly ? 4 : 0
 
   const coverageUrl = useMemo(
     () => (coverage ? coverageToDataUrl(coverage) : null),
@@ -214,7 +218,7 @@ export function Map2DView({
               <CircleMarker
                 key={s.id}
                 center={[s.lat_deg, s.lon_deg]}
-                radius={selected ? 10 : s.active ? 7 : 5}
+                radius={selected ? 10 + satR : s.active ? 7 + satR : 5 + satR}
                 eventHandlers={{
                     click: (e) => {
                       e.originalEvent.stopPropagation()
@@ -252,7 +256,7 @@ export function Map2DView({
           <CircleMarker
             key={g.id}
             center={[g.lat_deg, g.lon_deg]}
-            radius={g.id === clientId ? 11 : 9}
+            radius={g.id === clientId ? 11 + groundR : 9 + groundR}
             eventHandlers={
               g.role === 'client' && showNetwork
                 ? {

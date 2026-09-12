@@ -213,16 +213,32 @@ export default function App() {
           {scenario && (
             <>
               <button type="button" className="btn ghost" onClick={runSim} disabled={busy}>
-                Запустить расчёт
+                <span className="label-full">Запустить расчёт</span>
+                <span className="label-short">Расчёт</span>
               </button>
-              {sim && (
-                <a className="btn ghost" href={Api.downloadResultUrl(sim.result_id)} download>
-                  Выгрузить результат
+              <details className="more-menu">
+                <summary className="btn ghost">Ещё</summary>
+                <div className="more-menu-panel">
+                  {sim && (
+                    <a className="more-menu-item" href={Api.downloadResultUrl(sim.result_id)} download>
+                      Выгрузить результат
+                    </a>
+                  )}
+                  <a className="more-menu-item" href={Api.downloadScenarioUrl()} download>
+                    Сценарий JSON
+                  </a>
+                </div>
+              </details>
+              <div className="top-actions-desktop-extra">
+                {sim && (
+                  <a className="btn ghost" href={Api.downloadResultUrl(sim.result_id)} download>
+                    Выгрузить результат
+                  </a>
+                )}
+                <a className="btn ghost" href={Api.downloadScenarioUrl()} download>
+                  Сценарий JSON
                 </a>
-              )}
-              <a className="btn ghost" href={Api.downloadScenarioUrl()} download>
-                Сценарий JSON
-              </a>
+              </div>
             </>
           )}
         </div>
@@ -350,32 +366,35 @@ export default function App() {
                   Цель: {pct(sim.target_availability)} · горизонт {formatTime(sim.horizon_s)} · шаг{' '}
                   {sim.step_s} с
                 </p>
-                <table className="metrics">
-                  <thead>
-                    <tr>
-                      <th>Пункт</th>
-                      <th>Видимость</th>
-                      <th>Доступность</th>
-                      <th>Макс. перерыв</th>
-                      <th>Ср. hops</th>
-                      <th>Цель</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(sim.metrics).map(([id, m]) => (
-                      <tr key={id}>
-                        <td>{id}</td>
-                        <td>{pct(m.visibility_ratio)}</td>
-                        <td>{pct(m.availability_ratio)}</td>
-                        <td>{formatTime(m.max_outage_s)}</td>
-                        <td>{m.mean_hops?.toFixed(2) ?? '—'}</td>
-                        <td>
-                          {m.availability_ratio >= sim.target_availability ? 'да' : 'нет'}
-                        </td>
+                <div className="table-scroll">
+                  <table className="metrics">
+                    <thead>
+                      <tr>
+                        <th>Пункт</th>
+                        <th>Видимость</th>
+                        <th>Доступность</th>
+                        <th>Макс. перерыв</th>
+                        <th>Ср. hops</th>
+                        <th>Цель</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {Object.entries(sim.metrics).map(([id, m]) => (
+                        <tr key={id}>
+                          <td>{id}</td>
+                          <td>{pct(m.visibility_ratio)}</td>
+                          <td>{pct(m.availability_ratio)}</td>
+                          <td>{formatTime(m.max_outage_s)}</td>
+                          <td>{m.mean_hops?.toFixed(2) ?? '—'}</td>
+                          <td>
+                            {m.availability_ratio >= sim.target_availability ? 'да' : 'нет'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="muted tiny table-scroll-hint">прокрутите таблицу →</p>
                 <AvailabilityChart simulation={sim} clientId={clientId || clients[0]?.id} />
               </div>
             )}

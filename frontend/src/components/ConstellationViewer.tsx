@@ -6,6 +6,7 @@ import {
   type Simulation,
   type Scenario,
 } from '../api'
+import { useMedia } from '../useMedia'
 import { Map2DView } from './Map2DView'
 import { Globe3DView } from './Globe3DView'
 import { TimeScrubber } from './TimeScrubber'
@@ -50,7 +51,9 @@ export function ConstellationViewer({
   const [coverage, setCoverage] = useState<CoverageGrid | null>(null)
   const [coverageBusy, setCoverageBusy] = useState(false)
   const [selectedSatId, setSelectedSatId] = useState<string | null>(null)
+  const [mobilePanel, setMobilePanel] = useState<'legend' | 'stats' | null>(null)
   const cacheRef = useRef<Map<number, CoverageGrid>>(new Map())
+  const narrow = useMedia('(max-width: 480px)')
 
   const pathSet = useMemo(() => {
     const edges = new Set<string>()
@@ -158,15 +161,19 @@ export function ConstellationViewer({
             type="button"
             className={mode === '2d' ? 'active' : ''}
             onClick={() => setMode('2d')}
+            title="Плоская карта"
           >
-            Плоская карта
+            <span className="label-full">Плоская карта</span>
+            <span className="label-short">2D</span>
           </button>
           <button
             type="button"
             className={mode === '3d' ? 'active' : ''}
             onClick={() => setMode('3d')}
+            title="3D вокруг Земли"
           >
-            3D вокруг Земли
+            <span className="label-full">3D вокруг Земли</span>
+            <span className="label-short">3D</span>
           </button>
         </div>
         <div className="toggle">
@@ -174,15 +181,19 @@ export function ConstellationViewer({
             type="button"
             className={viewLayer === 'network' ? 'active' : ''}
             onClick={() => setViewLayer('network')}
+            title="Сеть / маршрут"
           >
-            Сеть / маршрут
+            <span className="label-full">Сеть / маршрут</span>
+            <span className="label-short">Сеть</span>
           </button>
           <button
             type="button"
             className={viewLayer === 'coverage' ? 'active' : ''}
             onClick={() => setViewLayer('coverage')}
+            title="Покрытие"
           >
-            Покрытие
+            <span className="label-full">Покрытие</span>
+            <span className="label-short">Покр.</span>
           </button>
         </div>
       </div>
@@ -215,15 +226,37 @@ export function ConstellationViewer({
           />
         )}
         <div className="map-side-panels">
-          <MapLegendOverlay
-            viewLayer={viewLayer}
-            clientId={clientId}
-            selectedSatId={selectedSatId}
-            satNeighborCount={satNeighbors.length}
-            coverageBusy={coverageBusy}
-            coverPct={coverPct}
-          />
-          <MapStatsOverlay {...liveStats} />
+          {narrow && (
+            <div className="map-panel-toggles">
+              <button
+                type="button"
+                className={`btn ghost compact${mobilePanel === 'legend' ? ' active-preset' : ''}`}
+                onClick={() =>
+                  setMobilePanel((p) => (p === 'legend' ? null : 'legend'))
+                }
+              >
+                Легенда
+              </button>
+              <button
+                type="button"
+                className={`btn ghost compact${mobilePanel === 'stats' ? ' active-preset' : ''}`}
+                onClick={() => setMobilePanel((p) => (p === 'stats' ? null : 'stats'))}
+              >
+                Стат.
+              </button>
+            </div>
+          )}
+          {(!narrow || mobilePanel === 'legend') && (
+            <MapLegendOverlay
+              viewLayer={viewLayer}
+              clientId={clientId}
+              selectedSatId={selectedSatId}
+              satNeighborCount={satNeighbors.length}
+              coverageBusy={coverageBusy}
+              coverPct={coverPct}
+            />
+          )}
+          {(!narrow || mobilePanel === 'stats') && <MapStatsOverlay {...liveStats} />}
         </div>
         <TimeScrubber
           t_s={t_s}

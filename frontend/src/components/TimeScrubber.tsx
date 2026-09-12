@@ -99,7 +99,7 @@ export function TimeScrubber({
         <span className="time-label">
           {formatTime(t_s)} · {t_s} с
         </span>
-        <span className="route-inline">{routeLabel}</span>
+        <span className="route-inline desktop-route">{routeLabel}</span>
       </div>
       <div
         className="scrub-track"
@@ -141,6 +141,7 @@ export function TimeScrubber({
           aria-label="Время расчёта"
         />
       </div>
+      <div className="route-inline mobile-route">{routeLabel}</div>
     </div>
   )
 }

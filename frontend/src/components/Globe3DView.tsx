@@ -11,6 +11,7 @@ import {
   footprintHalfAngleRad,
   footprintRingEcef,
 } from '../footprint'
+import { useMedia } from '../useMedia'
 
 const R = EARTH_R_KM
 const SCALE = 1 / 1000
@@ -287,14 +288,22 @@ export function Globe3DView({
   }, [isl, selectedSatId])
 
   const dimOthers = Boolean(selectedSatId)
+  const compactGlobe = useMedia('(max-width: 480px), (pointer: coarse)')
 
   return (
     <div className="globe3d">
-      <Canvas camera={{ position: [0, 4, 14], fov: 45 }}>
+      <Canvas dpr={[1, compactGlobe ? 1.25 : 1.5]} camera={{ position: [0, 4, 14], fov: 45 }}>
         <color attach="background" args={['#050d14']} />
         <ambientLight intensity={0.45} />
         <directionalLight position={[8, 6, 10]} intensity={1.35} />
-        <Stars radius={80} depth={40} count={2500} factor={3} saturation={0} fade />
+        <Stars
+          radius={80}
+          depth={40}
+          count={compactGlobe ? 900 : 2500}
+          factor={3}
+          saturation={0}
+          fade
+        />
         <Suspense fallback={<EarthFallback />}>
           <Earth />
         </Suspense>
@@ -393,7 +402,7 @@ export function Globe3DView({
             </group>
           )
         })}
-        <OrbitControls enablePan makeDefault />
+        <OrbitControls enablePan={!compactGlobe} makeDefault />
       </Canvas>
     </div>
   )

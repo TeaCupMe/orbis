@@ -20,7 +20,9 @@ export function MapLegendOverlay({
       {viewLayer === 'network' ? (
         <>
           <div className="map-legend-title">Легенда</div>
-          <div className="map-legend-row hint">ЛКМ: клиент — маршрут · КА — ISL и зона связи</div>
+          <div className="map-legend-row hint">
+            Клиент — маршрут · КА — ISL и зона связи
+          </div>
           <div className="map-legend-row">
             <span className="dot active-sat" /> активный КА
           </div>

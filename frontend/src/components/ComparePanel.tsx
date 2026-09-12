@@ -430,6 +430,7 @@ export function ComparePanel({ variants, onRefresh, onLoadVariant }: Props) {
               </tbody>
             </table>
           </div>
+          <p className="muted tiny table-scroll-hint">прокрутите таблицу →</p>
 
           <h3>Различия параметров</h3>
           <div className="table-scroll">
@@ -454,6 +455,7 @@ export function ComparePanel({ variants, onRefresh, onLoadVariant }: Props) {
               </tbody>
             </table>
           </div>
+          <p className="muted tiny table-scroll-hint">прокрутите таблицу →</p>
         </div>
       )}
     </section>
