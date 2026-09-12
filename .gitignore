@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+data/variants/*
+!data/variants/.gitkeep
+data/results/*
+!data/results/.gitkeep
+*.egg-info/
+.vite/
