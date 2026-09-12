@@ -381,7 +381,6 @@ export default function App() {
               step_s={scenario.environment.step_s}
               horizon_s={scenario.environment.horizon_s}
               minElevationDeg={scenario.environment.min_elevation_deg}
-              failures={scenario.failures}
               gatewayOutages={scenario.gateway_outages}
               simulation={sim}
               playing={playing}

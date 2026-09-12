@@ -105,6 +105,32 @@ def test_failure_probability_one_kills_links():
         assert m["visibility_ratio"] == 0.0
 
 
+def test_snapshot_respects_failure_probability():
+    from calc.simulation import analyze_timestep
+
+    s = load(SCENARIO)
+    s["environment"]["failure_probability"] = 1.0
+    analysis = analyze_timestep(s, 0.0, seed=0)
+    active = [sat for sat in analysis["snapshot"]["satellites"] if sat["active"]]
+    assert len(active) == 0
+    assert len(analysis["stochastic_failed"]) == len(s["design"]["satellites"])
+
+
+def test_sticky_failures_accumulate():
+    from calc.simulation import analyze_timestep
+
+    s = load(SCENARIO)
+    s["environment"]["horizon_s"] = 1200
+    s["environment"]["step_s"] = 120
+    s["environment"]["failure_probability"] = 0.35
+    early = analyze_timestep(s, 0.0, seed=7)
+    late = analyze_timestep(s, 1080.0, seed=7)
+    failed_early = {sat["id"] for sat in early["snapshot"]["satellites"] if not sat["active"]}
+    failed_late = {sat["id"] for sat in late["snapshot"]["satellites"] if not sat["active"]}
+    assert failed_early <= failed_late
+    assert len(failed_late) >= len(failed_early)
+
+
 def test_failure_probability_zero_matches_baseline():
     s = load(SCENARIO)
     s["environment"]["horizon_s"] = 1200

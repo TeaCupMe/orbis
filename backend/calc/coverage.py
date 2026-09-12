@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from .geometry import R, positions
+from .simulation import sticky_failed_up_to
 
 
 def coverage_grid(
@@ -40,6 +41,9 @@ def coverage_grid(
     failed = {
         f["satellite_id"] for f in scenario["failures"] if f["start_s"] <= t_s < f["end_s"]
     }
+    stochastic = sticky_failed_up_to(scenario, t_s)
+    if stochastic:
+        failed |= stochastic
     active_mask = np.array(
         [
             sat["launch_batch"] <= d["launch_stage"] and sat["id"] not in failed

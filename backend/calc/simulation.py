@@ -23,17 +23,18 @@ def _ids(scenario: dict) -> tuple[set[str], set[str], list[str]]:
     return sat_ids, gateways, clients
 
 
-def _bernoulli_failed(
+def _roll_new_failures(
     scenario: dict,
     t_s: float,
     p: float,
     rng: np.random.Generator,
+    already_failed: set[str],
 ) -> set[str]:
     """
-    Независимый отказ на текущем шаге для КА, которые иначе были бы активны
-    (launch_batch <= launch_stage и нет детерминированного failure).
+    Bernoulli-отказы на шаге t_s среди КА, которые ещё не отказали стохастически
+    и иначе были бы активны (launch_batch ≤ launch_stage, нет детерминированного failure).
 
-    NOTE: отказ действует только на этот шаг — следующий бросок независим.
+    Возвращает только *новые* отказы; already_failed не трогает.
     """
     if p <= 0:
         return set()
@@ -43,23 +44,59 @@ def _bernoulli_failed(
     }
     out: set[str] = set()
     for sat in d["satellites"]:
-        if sat["launch_batch"] > d["launch_stage"] or sat["id"] in det:
+        sid = sat["id"]
+        if sid in already_failed:
+            continue
+        if sat["launch_batch"] > d["launch_stage"] or sid in det:
             continue
         if rng.random() < p:
-            out.add(sat["id"])
+            out.add(sid)
     return out
+
+
+def _step_rng(base_seed: int | None, t_s: float) -> np.random.Generator:
+    """Детерминированный RNG на шаг: один и тот же t_s → те же броски."""
+    ss = np.random.SeedSequence([int(base_seed or 0), int(round(float(t_s)))])
+    return np.random.default_rng(ss)
+
+
+def sticky_failed_up_to(
+    scenario: dict,
+    t_s: float,
+    seed: int | None = None,
+) -> set[str] | None:
+    """
+    Накопленные стохастические отказы к моменту t_s (включительно по сетке).
+
+    На каждом шаге ≤ t_s ещё живые КА могут отказать с вероятностью p;
+    отказавший остаётся в множестве до конца горизонта.
+    """
+    p = float(scenario["environment"].get("failure_probability") or 0.0)
+    if p <= 0:
+        return None
+    e = scenario["environment"]
+    sticky: set[str] = set()
+    for t in time_grid(e["horizon_s"], e["step_s"]):
+        if float(t) > float(t_s) + 1e-9:
+            break
+        sticky |= _roll_new_failures(
+            scenario, float(t), p, _step_rng(seed, float(t)), sticky
+        )
+    return sticky
 
 
 def analyze_timestep(
     scenario: dict,
     t_s: float,
     client_id: str | None = None,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """Снимок сети + маршруты для всех (или одного) client на момент t_s."""
     sat_ids, gateways, clients = _ids(scenario)
     if client_id is not None:
         clients = [client_id]
-    snap = snapshot(scenario, t_s)
+    extra = sticky_failed_up_to(scenario, t_s, seed)
+    snap = snapshot(scenario, t_s, extra_failed=extra)
     e = scenario["environment"]
     min_el = e["min_elevation_deg"]
 
@@ -81,7 +118,14 @@ def analyze_timestep(
             "outage_reason": reason,
             "outage_reason_label": reason_label,
         }
-    return {"t_s": t_s, "snapshot": snap, "routes": routes}
+    return {
+        "t_s": t_s,
+        "snapshot": snap,
+        "routes": routes,
+        "stochastic_failed": sorted(extra) if extra else [],
+        "active_satellites": sum(1 for s in snap["satellites"] if s["active"]),
+        "inactive_satellites": sum(1 for s in snap["satellites"] if not s["active"]),
+    }
 
 
 def run_simulation(
@@ -92,15 +136,15 @@ def run_simulation(
     """
     Расчёт на всём горизонте.
 
-    Если environment.failure_probability > 0 — на каждом шаге независимые
-    Bernoulli-отказы КА (см. _bernoulli_failed). seed воспроизводит прогон.
+    Если environment.failure_probability > 0 — на каждом шаге ещё активные КА
+    могут отказать с вероятностью p; отказ необратим до конца прогона (sticky).
+    seed воспроизводит прогон (см. _step_rng / sticky_failed_up_to).
     """
     e = scenario["environment"]
     step_s = e["step_s"]
     times = time_grid(e["horizon_s"], step_s)
     sat_ids, gateways, clients = _ids(scenario)
     p = float(e.get("failure_probability") or 0.0)
-    rng = np.random.default_rng(seed) if p > 0 else None
 
     visibility: dict[str, list[bool]] = {c: [] for c in clients}
     reachability: dict[str, list[bool]] = {c: [] for c in clients}
@@ -110,9 +154,16 @@ def run_simulation(
 
     n = len(times)
     min_el = e["min_elevation_deg"]
+    sticky: set[str] = set()
 
     for i, t_s in enumerate(times):
-        extra = _bernoulli_failed(scenario, float(t_s), p, rng) if rng is not None else None
+        if p > 0:
+            sticky |= _roll_new_failures(
+                scenario, float(t_s), p, _step_rng(seed, float(t_s)), sticky
+            )
+            extra: set[str] | None = set(sticky)
+        else:
+            extra = None
         snap = snapshot(scenario, float(t_s), extra_failed=extra)
         for cid in clients:
             elev = snap.get("elevation_deg", {}).get(cid, {})

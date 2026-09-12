@@ -24,7 +24,7 @@ export type Scenario = {
     min_elevation_deg: number
     isl_range_km: number
     target_availability: number
-    /** Опционально: вероятность отказа КА на каждом шаге [0..1] */
+    /** Опционально: вероятность необратимого отказа КА на шаге [0..1] */
     failure_probability?: number
   }
   design: {
@@ -99,6 +99,9 @@ export type SnapshotAnalysis = {
     }
   >
   ground_sites: GroundSite[]
+  stochastic_failed?: string[]
+  active_satellites?: number
+  inactive_satellites?: number
 }
 
 export type CoverageGrid = {

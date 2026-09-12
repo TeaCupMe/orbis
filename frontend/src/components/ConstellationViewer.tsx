@@ -20,7 +20,6 @@ type Props = {
   step_s: number
   horizon_s: number
   minElevationDeg: number
-  failures: Scenario['failures']
   gatewayOutages: Scenario['gateway_outages']
   simulation: Simulation | null
   playing: boolean
@@ -38,7 +37,6 @@ export function ConstellationViewer({
   step_s,
   horizon_s,
   minElevationDeg,
-  failures,
   gatewayOutages,
   simulation,
   playing,
@@ -123,13 +121,10 @@ export function ConstellationViewer({
 
   const liveStats = useMemo(() => {
     const sats = analysis.snapshot.satellites
-    const failedIds = new Set(
-      failures
-        .filter((f) => f.start_s <= t_s && t_s < f.end_s)
-        .map((f) => f.satellite_id),
-    )
-    const failedSats = sats.filter((s) => failedIds.has(s.id)).length
-    const activeSats = sats.filter((s) => s.active).length
+    const activeSats =
+      analysis.active_satellites ?? sats.filter((s) => s.active).length
+    const inactiveSats =
+      analysis.inactive_satellites ?? sats.length - activeSats
 
     const clients = analysis.ground_sites.filter((g) => g.role === 'client')
     const gateways = analysis.ground_sites.filter((g) => g.role === 'gateway')
@@ -144,15 +139,16 @@ export function ConstellationViewer({
     const gatewaysOnline = gateways.filter((g) => !offlineGw.has(g.id)).length
 
     return {
-      failedSats,
+      failedSats: inactiveSats,
       activeSats,
       totalSats: sats.length,
+      stochasticFailed: analysis.stochastic_failed?.length ?? 0,
       clientsReachable,
       clientsTotal: clients.length,
       gatewaysOnline,
       gatewaysTotal: gateways.length,
     }
-  }, [analysis, failures, gatewayOutages, t_s])
+  }, [analysis, gatewayOutages, t_s])
 
   return (
     <div className="viewer">

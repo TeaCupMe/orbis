@@ -2,6 +2,7 @@ type Props = {
   failedSats: number
   activeSats: number
   totalSats: number
+  stochasticFailed: number
   clientsReachable: number
   clientsTotal: number
   gatewaysOnline: number
@@ -12,6 +13,7 @@ export function MapStatsOverlay({
   failedSats,
   activeSats,
   totalSats,
+  stochasticFailed,
   clientsReachable,
   clientsTotal,
   gatewaysOnline,
@@ -26,10 +28,11 @@ export function MapStatsOverlay({
     <div className="map-stats" onPointerDown={(e) => e.stopPropagation()}>
       <div className="map-legend-title">Статистика</div>
       <div className="map-legend-row">
-        отказало КА: <strong>{failedSats}</strong>
+        активны КА: <strong>{activeSats}</strong> / {totalSats}
       </div>
       <div className="map-legend-row">
-        активны КА: <strong>{activeSats}</strong> / {totalSats}
+        неактивны КА: <strong>{failedSats}</strong>
+        {stochasticFailed > 0 ? ` (отказы: ${stochasticFailed})` : ''}
       </div>
       <div className="map-legend-row">
         станции доступны: <strong>{groundOnline}</strong> / {groundTotal} ({groundPct}%)

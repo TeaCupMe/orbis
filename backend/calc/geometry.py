@@ -64,7 +64,7 @@ def validate(s: dict) -> None:
         and (0 <= e["target_availability"] <= 1)
     ):
         raise ValueError("Invalid link/target values")
-    # Опциональное расширение ORBIS: Bernoulli-отказ КА на каждом шаге
+    # Опциональное расширение ORBIS: вероятность необратимого отказа КА на шаге
     if "failure_probability" in e:
         fp = e["failure_probability"]
         if not finite(fp) or not (0 <= fp <= 1):
@@ -208,7 +208,7 @@ def snapshot(s: dict, t_s: float, extra_failed: set[str] | None = None) -> dict:
     Активность КА:
       active ⇔ launch_batch <= launch_stage
                И нет отказа на [start_s, end_s)
-               И id не в extra_failed (стохастические отказы на шаг).
+               И id не в extra_failed (накопленные стохастические отказы).
 
     ISL между активными a, b доступен, если:
       ‖b − a‖ < isl_range_km
