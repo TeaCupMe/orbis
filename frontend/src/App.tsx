@@ -11,7 +11,6 @@ import { ConstellationViewer } from './components/ConstellationViewer'
 import { AvailabilityChart } from './components/AvailabilityChart'
 import { ComparePanel } from './components/ComparePanel'
 import { ConfigPanel } from './components/ConfigPanel'
-import { DemoWalkthrough } from './components/DemoWalkthrough'
 import { formatTime, pct } from './format'
 
 type Tab = 'project' | 'network' | 'compare'
@@ -303,7 +302,6 @@ export default function App() {
       <main className={`main ${tab === 'network' ? 'main-network' : ''}`}>
         {tab === 'project' && (
           <section className="panel-grid">
-            <DemoWalkthrough />
             <div className="card-block">
               <h2>Сценарий</h2>
               <p className="muted">Загрузите демо или свой JSON формата cosmo-A-1.0</p>

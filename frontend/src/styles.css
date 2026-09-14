@@ -177,44 +177,6 @@ select {
   color: var(--ink);
 }
 
-.walkthrough {
-  grid-column: 1 / -1;
-}
-
-.walkthrough-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.walkthrough-list {
-  margin: 0.5rem 0 0;
-  padding-left: 1.2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.walkthrough-list li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.walkthrough-list strong {
-  color: var(--ink);
-  font-size: 0.92rem;
-}
-
-.walkthrough-reopen {
-  grid-column: 1 / -1;
-  justify-self: start;
-  width: fit-content;
-}
-
 .routing-hint {
   margin: 0;
   padding: 0.35rem 0.85rem 0.45rem;
