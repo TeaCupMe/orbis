@@ -13,7 +13,14 @@ import numpy as np
 
 from .geometry import snapshot
 from .metrics import client_metrics_from_reachability, time_grid
-from .routing import OUTAGE_LABELS_RU, classify_outage, find_route
+from .routing import (
+    OUTAGE_LABELS_RU,
+    RoutingStrategy,
+    classify_outage,
+    find_alternate_routes,
+    find_route,
+    path_length_km,
+)
 
 
 def _ids(scenario: dict) -> tuple[set[str], set[str], list[str]]:
@@ -21,6 +28,12 @@ def _ids(scenario: dict) -> tuple[set[str], set[str], list[str]]:
     gateways = {g["id"] for g in scenario["ground_sites"] if g["role"] == "gateway"}
     clients = [g["id"] for g in scenario["ground_sites"] if g["role"] == "client"]
     return sat_ids, gateways, clients
+
+
+def _normalize_strategy(strategy: str | None) -> RoutingStrategy:
+    if strategy == "distance":
+        return "distance"
+    return "hops"
 
 
 def _roll_new_failures(
@@ -90,11 +103,14 @@ def analyze_timestep(
     t_s: float,
     client_id: str | None = None,
     seed: int | None = None,
+    strategy: str | None = "hops",
+    alternate_k: int = 3,
 ) -> dict[str, Any]:
     """Снимок сети + маршруты для всех (или одного) client на момент t_s."""
     sat_ids, gateways, clients = _ids(scenario)
     if client_id is not None:
         clients = [client_id]
+    strat = _normalize_strategy(strategy)
     extra = sticky_failed_up_to(scenario, t_s, seed)
     snap = snapshot(scenario, t_s, extra_failed=extra)
     e = scenario["environment"]
@@ -102,26 +118,46 @@ def analyze_timestep(
 
     routes: dict[str, Any] = {}
     for cid in clients:
-        path = find_route(snap["edges"], cid, gateways, sat_ids)
+        alts = find_alternate_routes(
+            snap["edges"], cid, gateways, sat_ids, strategy=strat, k=alternate_k
+        )
+        path = alts[0]["path"] if alts else None
         elev = snap.get("elevation_deg", {}).get(cid, {})
         visible = any(el >= min_el for el in elev.values())
         reason = None
         reason_label = None
-        if path is None:
+        if not path:
             reason = classify_outage(snap, cid, gateways, sat_ids, scenario, t_s)
             reason_label = OUTAGE_LABELS_RU.get(reason, reason)
+        # Сравнение стратегий на этом снимке (для UI)
+        other: RoutingStrategy = "distance" if strat == "hops" else "hops"
+        other_path = find_route(snap["edges"], cid, gateways, sat_ids, strategy=other)
         routes[cid] = {
             "path": path or [],
             "hops": (len(path) - 1) if path else None,
+            "length_km": path_length_km(snap["edges"], path) if path else None,
+            "strategy": strat,
             "visible": visible,
-            "reachable": path is not None,
+            "reachable": bool(path),
             "outage_reason": reason,
             "outage_reason_label": reason_label,
+            "alternates": alts,
+            "alternate_count": len(alts),
+            "other_strategy": {
+                "strategy": other,
+                "path": other_path or [],
+                "hops": (len(other_path) - 1) if other_path else None,
+                "length_km": (
+                    path_length_km(snap["edges"], other_path) if other_path else None
+                ),
+                "reachable": other_path is not None,
+            },
         }
     return {
         "t_s": t_s,
         "snapshot": snap,
         "routes": routes,
+        "routing_strategy": strat,
         "stochastic_failed": sorted(extra) if extra else [],
         "active_satellites": sum(1 for s in snap["satellites"] if s["active"]),
         "inactive_satellites": sum(1 for s in snap["satellites"] if not s["active"]),
@@ -132,6 +168,7 @@ def run_simulation(
     scenario: dict,
     progress: Callable[[float], None] | None = None,
     seed: int | None = None,
+    strategy: str | None = "hops",
 ) -> dict[str, Any]:
     """
     Расчёт на всём горизонте.
@@ -139,16 +176,20 @@ def run_simulation(
     Если environment.failure_probability > 0 — на каждом шаге ещё активные КА
     могут отказать с вероятностью p; отказ необратим до конца прогона (sticky).
     seed воспроизводит прогон (см. _step_rng / sticky_failed_up_to).
+    strategy: hops (BFS) или distance (Dijkstra) — влияет на выбранный путь
+    и mean_hops / mean_path_km, но не на availability (достижимость та же).
     """
     e = scenario["environment"]
     step_s = e["step_s"]
     times = time_grid(e["horizon_s"], step_s)
     sat_ids, gateways, clients = _ids(scenario)
     p = float(e.get("failure_probability") or 0.0)
+    strat = _normalize_strategy(strategy)
 
     visibility: dict[str, list[bool]] = {c: [] for c in clients}
     reachability: dict[str, list[bool]] = {c: [] for c in clients}
     hop_series: dict[str, list[int | None]] = {c: [] for c in clients}
+    path_km_series: dict[str, list[float | None]] = {c: [] for c in clients}
     outage_series: dict[str, list[str | None]] = {c: [] for c in clients}
     routes_export: list[dict[str, Any]] = []
 
@@ -168,25 +209,37 @@ def run_simulation(
         for cid in clients:
             elev = snap.get("elevation_deg", {}).get(cid, {})
             vis = any(el >= min_el for el in elev.values())
-            path = find_route(snap["edges"], cid, gateways, sat_ids)
+            path = find_route(snap["edges"], cid, gateways, sat_ids, strategy=strat)
             visibility[cid].append(vis)
             reachability[cid].append(path is not None)
             hop_series[cid].append((len(path) - 1) if path else None)
+            path_km_series[cid].append(
+                path_length_km(snap["edges"], path) if path else None
+            )
             if path is None:
                 reason = classify_outage(snap, cid, gateways, sat_ids, scenario, float(t_s))
             else:
                 reason = None
             outage_series[cid].append(reason)
-            routes_export.append({"t_s": t_s, "client_id": cid, "path": path or []})
+            routes_export.append(
+                {
+                    "t_s": t_s,
+                    "client_id": cid,
+                    "path": path or [],
+                    "strategy": strat,
+                }
+            )
         if progress is not None:
             progress((i + 1) / n)
 
-    metrics = {
-        cid: client_metrics_from_reachability(
+    metrics = {}
+    for cid in clients:
+        m = client_metrics_from_reachability(
             visibility[cid], reachability[cid], hop_series[cid], step_s
         )
-        for cid in clients
-    }
+        lengths = [x for x in path_km_series[cid] if x is not None]
+        m["mean_path_km"] = (sum(lengths) / len(lengths)) if lengths else None
+        metrics[cid] = m
 
     return {
         "times": times,
@@ -195,12 +248,14 @@ def run_simulation(
         "visibility": visibility,
         "routes": routes_export,
         "hop_series": hop_series,
+        "path_km_series": path_km_series,
         "outage_series": outage_series,
         "target_availability": e["target_availability"],
         "step_s": step_s,
         "horizon_s": e["horizon_s"],
         "failure_probability": p,
         "random_seed": seed if p > 0 else None,
+        "routing_strategy": strat,
     }
 
 
@@ -216,6 +271,7 @@ def build_result_export(scenario: dict, sim: dict[str, Any]) -> dict[str, Any]:
             if m["availability_ratio"] >= sim["target_availability"]
         ],
         "failure_probability": sim.get("failure_probability", 0.0),
+        "routing_strategy": sim.get("routing_strategy", "hops"),
     }
     if sim.get("random_seed") is not None:
         summary["random_seed"] = sim["random_seed"]

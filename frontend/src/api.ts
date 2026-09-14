@@ -47,7 +47,19 @@ export type ClientMetrics = {
   availability_ratio: number
   max_outage_s: number
   mean_hops: number | null
+  mean_path_km?: number | null
   steps: number
+}
+
+export type RoutingStrategy = 'hops' | 'distance'
+
+export type RouteAlternate = {
+  path: string[]
+  hops: number | null
+  length_km: number | null
+  strategy: RoutingStrategy
+  index: number
+  disjoint?: boolean
 }
 
 export type Simulation = {
@@ -57,15 +69,20 @@ export type Simulation = {
   availability: Record<string, boolean[]>
   visibility: Record<string, boolean[]>
   hop_series: Record<string, Array<number | null>>
+  path_km_series?: Record<string, Array<number | null>>
   outage_series: Record<string, Array<string | null>>
   target_availability: number
   step_s: number
   horizon_s: number
+  routing_strategy?: RoutingStrategy
+  failure_probability?: number
+  random_seed?: number | null
   summary: {
     target_availability: number
     step_s: number
     horizon_s: number
     clients_meeting_target: string[]
+    routing_strategy?: RoutingStrategy
   }
 }
 
@@ -92,13 +109,26 @@ export type SnapshotAnalysis = {
     {
       path: string[]
       hops: number | null
+      length_km?: number | null
+      strategy?: RoutingStrategy
       visible: boolean
       reachable: boolean
       outage_reason: string | null
       outage_reason_label: string | null
+      alternates?: RouteAlternate[]
+      alternate_count?: number
+      other_strategy?: {
+        strategy: RoutingStrategy
+        path: string[]
+        hops: number | null
+        length_km: number | null
+        reachable: boolean
+      }
     }
   >
   ground_sites: GroundSite[]
+  routing_strategy?: RoutingStrategy
+  session_seed?: number | null
   stochastic_failed?: string[]
   active_satellites?: number
   inactive_satellites?: number
@@ -199,18 +229,29 @@ export const Api = {
       body: JSON.stringify(edits),
     }),
   reset: () => api<{ ok: boolean; scenario: Scenario }>('/api/scenario/reset', { method: 'POST' }),
-  simulate: (seed?: number | null) =>
+  simulate: (opts?: { seed?: number | null; strategy?: RoutingStrategy | null }) =>
     api<Simulation>('/api/simulate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ seed: seed ?? null }),
+      body: JSON.stringify({
+        seed: opts?.seed ?? null,
+        strategy: opts?.strategy ?? null,
+      }),
     }),
   getSimulation: () => api<Simulation>('/api/simulation'),
-  snapshot: (t_s: number, client_id?: string) =>
+  snapshot: (
+    t_s: number,
+    opts?: { client_id?: string; seed?: number | null; strategy?: RoutingStrategy | null },
+  ) =>
     api<SnapshotAnalysis>('/api/snapshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ t_s, client_id: client_id ?? null }),
+      body: JSON.stringify({
+        t_s,
+        client_id: opts?.client_id ?? null,
+        seed: opts?.seed ?? null,
+        strategy: opts?.strategy ?? null,
+      }),
     }),
   coverage: (t_s: number, lat_step_deg = 2, lon_step_deg = 2) =>
     api<CoverageGrid>('/api/coverage', {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Api,
+  type RoutingStrategy,
   type Scenario,
   type Simulation,
   type SnapshotAnalysis,
@@ -10,6 +11,7 @@ import { ConstellationViewer } from './components/ConstellationViewer'
 import { AvailabilityChart } from './components/AvailabilityChart'
 import { ComparePanel } from './components/ComparePanel'
 import { ConfigPanel } from './components/ConfigPanel'
+import { DemoWalkthrough } from './components/DemoWalkthrough'
 import { formatTime, pct } from './format'
 
 type Tab = 'project' | 'network' | 'compare'
@@ -28,6 +30,9 @@ export default function App() {
   const [variants, setVariants] = useState<VariantMeta[]>([])
   const [variantName, setVariantName] = useState('')
   const [playing, setPlaying] = useState(false)
+  const [seed, setSeed] = useState(0)
+  const [routingStrategy, setRoutingStrategy] = useState<RoutingStrategy>('hops')
+  const [altIndex, setAltIndex] = useState(0)
 
   const clients = useMemo(
     () => scenario?.ground_sites.filter((g) => g.role === 'client') ?? [],
@@ -100,10 +105,11 @@ export default function App() {
     setError(null)
     setPlaying(false)
     try {
-      const res = await Api.simulate()
+      const res = await Api.simulate({ seed, strategy: routingStrategy })
       setSim(res)
       setTab('network')
-      const snap = await Api.snapshot(0)
+      setAltIndex(0)
+      const snap = await Api.snapshot(0, { seed, strategy: routingStrategy })
       setTs(0)
       setAnalysis(snap)
     } catch (e) {
@@ -118,14 +124,34 @@ export default function App() {
       setTs(next)
       if (!scenario) return
       try {
-        const snap = await Api.snapshot(next)
+        const snap = await Api.snapshot(next, { seed, strategy: routingStrategy })
         setAnalysis(snap)
+        setAltIndex(0)
       } catch (e) {
         setError(String((e as Error).message))
         setPlaying(false)
       }
     },
-    [scenario],
+    [scenario, seed, routingStrategy],
+  )
+
+  const onStrategyChange = useCallback(
+    async (next: RoutingStrategy) => {
+      setRoutingStrategy(next)
+      setAltIndex(0)
+      if (!scenario) return
+      setBusy(true)
+      try {
+        // Пересчёт снимка мгновенный; полный прогон — по кнопке «Запустить расчёт»
+        const snap = await Api.snapshot(t_s, { seed, strategy: next })
+        setAnalysis(snap)
+      } catch (e) {
+        setError(String((e as Error).message))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [scenario, seed, t_s],
   )
 
   const onClientChange = useCallback((cid: string) => {
@@ -159,9 +185,19 @@ export default function App() {
   }
 
   const routeInfo = clientId && analysis ? analysis.routes[clientId] : null
+  const alternates = routeInfo?.alternates ?? []
+  const activeAlt = alternates[altIndex] ?? alternates[0]
+  const displayPath = activeAlt?.path ?? routeInfo?.path ?? []
   const routeLabel = routeInfo
     ? routeInfo.reachable
-      ? `${routeInfo.path.join(' → ')} · hops ${routeInfo.hops}`
+      ? (() => {
+          const hops = activeAlt?.hops ?? routeInfo.hops
+          const km = activeAlt?.length_km ?? routeInfo.length_km
+          const kmPart = km != null ? ` · ${km.toFixed(0)} км` : ''
+          const altPart =
+            alternates.length > 1 ? ` · запасной ${altIndex + 1}/${alternates.length}` : ''
+          return `${displayPath.join(' → ')} · hops ${hops}${kmPart}${altPart}`
+        })()
       : routeInfo.outage_reason_label ?? 'перерыв связи'
     : 'загрузка…'
 
@@ -212,6 +248,17 @@ export default function App() {
           </span>
           {scenario && (
             <>
+              <label className="seed-field" title="Seed для стохастических отказов">
+                <span className="label-full">seed</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={seed}
+                  onChange={(e) => setSeed(Math.max(0, Math.round(Number(e.target.value)) || 0))}
+                  disabled={busy}
+                />
+              </label>
               <button type="button" className="btn ghost" onClick={runSim} disabled={busy}>
                 <span className="label-full">Запустить расчёт</span>
                 <span className="label-short">Расчёт</span>
@@ -256,6 +303,7 @@ export default function App() {
       <main className={`main ${tab === 'network' ? 'main-network' : ''}`}>
         {tab === 'project' && (
           <section className="panel-grid">
+            <DemoWalkthrough />
             <div className="card-block">
               <h2>Сценарий</h2>
               <p className="muted">Загрузите демо или свой JSON формата cosmo-A-1.0</p>
@@ -365,6 +413,9 @@ export default function App() {
                 <p className="muted">
                   Цель: {pct(sim.target_availability)} · горизонт {formatTime(sim.horizon_s)} · шаг{' '}
                   {sim.step_s} с
+                  {sim.routing_strategy
+                    ? ` · маршрут: ${sim.routing_strategy === 'distance' ? 'Dijkstra' : 'BFS'}`
+                    : ''}
                 </p>
                 <div className="table-scroll">
                   <table className="metrics">
@@ -375,6 +426,7 @@ export default function App() {
                         <th>Доступность</th>
                         <th>Макс. перерыв</th>
                         <th>Ср. hops</th>
+                        <th>Ср. км</th>
                         <th>Цель</th>
                       </tr>
                     </thead>
@@ -386,6 +438,9 @@ export default function App() {
                           <td>{pct(m.availability_ratio)}</td>
                           <td>{formatTime(m.max_outage_s)}</td>
                           <td>{m.mean_hops?.toFixed(2) ?? '—'}</td>
+                          <td>
+                            {m.mean_path_km != null ? `${m.mean_path_km.toFixed(0)}` : '—'}
+                          </td>
                           <td>
                             {m.availability_ratio >= sim.target_availability ? 'да' : 'нет'}
                           </td>
@@ -406,7 +461,12 @@ export default function App() {
             <ConstellationViewer
               analysis={analysis}
               clientId={clientId}
-              path={routeInfo?.path ?? []}
+              path={displayPath}
+              alternatePaths={alternates.map((a) => a.path)}
+              altIndex={altIndex}
+              onAltIndexChange={setAltIndex}
+              routingStrategy={routingStrategy}
+              onStrategyChange={(s) => void onStrategyChange(s)}
               t_s={t_s}
               step_s={scenario.environment.step_s}
               horizon_s={scenario.environment.horizon_s}

@@ -20,6 +20,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from api import store  # noqa: E402
 from calc.coverage import coverage_grid  # noqa: E402
 from calc.geometry import ecef_to_lat_lon  # noqa: E402
+from calc.routing import STRATEGY_LABELS_RU, compare_strategies_snapshot  # noqa: E402
 from calc.simulation import analyze_timestep, build_result_export, run_simulation  # noqa: E402
 
 app = FastAPI(title="Constellation Design Service", version="1.0.0")
@@ -37,6 +38,8 @@ _state: dict[str, Any] = {
     "source": None,
     "simulation": None,
     "result_id": None,
+    "seed": None,
+    "routing_strategy": "hops",
 }
 
 
@@ -62,9 +65,19 @@ class CompareBody(BaseModel):
 class SnapshotQuery(BaseModel):
     t_s: float = 0
     client_id: str | None = None
+    seed: int | None = None
+    strategy: str | None = None
+    alternate_k: int = 3
 
 
 class SimulateBody(BaseModel):
+    seed: int | None = None
+    strategy: str | None = None
+
+
+class RoutingCompareBody(BaseModel):
+    t_s: float = 0
+    client_id: str
     seed: int | None = None
 
 
@@ -210,11 +223,18 @@ def delete_variant(variant_id: str):
     return {"ok": True}
 
 
+def _normalize_strategy(strategy: str | None) -> str:
+    if strategy == "distance":
+        return "distance"
+    return "hops"
+
+
 @app.post("/api/simulate")
 def simulate(body: SimulateBody = SimulateBody()):
     sc = _require_scenario()
     seed = body.seed
-    sim = run_simulation(sc, seed=seed)
+    strategy = _normalize_strategy(body.strategy or _state.get("routing_strategy"))
+    sim = run_simulation(sc, seed=seed, strategy=strategy)
     result = build_result_export(sc, sim)
     rid = store.save_result(result)
     # Компактный ответ для UI (без полного routes dump в теле — он огромный)
@@ -225,6 +245,7 @@ def simulate(body: SimulateBody = SimulateBody()):
         "availability": sim["availability"],
         "visibility": sim["visibility"],
         "hop_series": sim["hop_series"],
+        "path_km_series": sim.get("path_km_series"),
         "outage_series": sim["outage_series"],
         "target_availability": sim["target_availability"],
         "step_s": sim["step_s"],
@@ -232,9 +253,12 @@ def simulate(body: SimulateBody = SimulateBody()):
         "summary": result["summary"],
         "failure_probability": sim.get("failure_probability", 0.0),
         "random_seed": sim.get("random_seed"),
+        "routing_strategy": strategy,
     }
     _state["simulation"] = compact
     _state["result_id"] = rid
+    _state["seed"] = seed
+    _state["routing_strategy"] = strategy
     return compact
 
 
@@ -277,13 +301,46 @@ def download_scenario():
 @app.post("/api/snapshot")
 def get_snapshot(body: SnapshotQuery):
     sc = _require_scenario()
+    seed = body.seed if body.seed is not None else _state.get("seed")
+    strategy = _normalize_strategy(
+        body.strategy or _state.get("routing_strategy") or "hops"
+    )
     try:
-        analysis = analyze_timestep(sc, body.t_s, body.client_id)
+        analysis = analyze_timestep(
+            sc,
+            body.t_s,
+            body.client_id,
+            seed=seed,
+            strategy=strategy,
+            alternate_k=body.alternate_k,
+        )
     except Exception as exc:
         raise HTTPException(400, str(exc))
     analysis["snapshot"] = _enrich_snapshot(analysis["snapshot"])
     analysis["ground_sites"] = sc["ground_sites"]
+    analysis["session_seed"] = seed
     return analysis
+
+
+@app.post("/api/routing/compare")
+def routing_compare(body: RoutingCompareBody):
+    """Сравнение стратегий hops vs distance на одном снимке."""
+    sc = _require_scenario()
+    seed = body.seed if body.seed is not None else _state.get("seed")
+    from calc.simulation import sticky_failed_up_to
+    from calc.geometry import snapshot as snap_fn
+
+    sat_ids = {s["id"] for s in sc["design"]["satellites"]}
+    gateways = {g["id"] for g in sc["ground_sites"] if g["role"] == "gateway"}
+    clients = {g["id"] for g in sc["ground_sites"] if g["role"] == "client"}
+    if body.client_id not in clients:
+        raise HTTPException(400, f"Неизвестный client_id: {body.client_id}")
+    extra = sticky_failed_up_to(sc, body.t_s, seed)
+    snap = snap_fn(sc, body.t_s, extra_failed=extra)
+    cmp = compare_strategies_snapshot(snap["edges"], body.client_id, gateways, sat_ids)
+    cmp["t_s"] = body.t_s
+    cmp["labels"] = STRATEGY_LABELS_RU
+    return cmp
 
 
 @app.post("/api/coverage")

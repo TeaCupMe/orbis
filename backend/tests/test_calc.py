@@ -170,3 +170,55 @@ def test_coverage_grid_full_has_north():
     # northern band: first few rows (high lat)
     north = grid["values"][:6]
     assert any(v > 0 for row in north for v in row)
+
+
+def test_dijkstra_prefers_shorter_distance():
+    from calc.routing import find_route
+
+    # hops: C→S1→S2→G = 3 hops, total 3000
+    # distance: C→S3→G = 2 hops but wait - shorter distance path:
+    # Path A: C-S1-S2-G distances 100+100+100 = 300, hops 3
+    # Path B: C-S3-G distances 2000+2000 = 4000, hops 2
+    # hops picks B (fewer hops), distance picks A (shorter km)
+    edges = [
+        ["C1", "S1", 100],
+        ["S1", "S2", 100],
+        ["S2", "G1", 100],
+        ["C1", "S3", 2000],
+        ["S3", "G1", 2000],
+    ]
+    sats = {"S1", "S2", "S3"}
+    hops = find_route(edges, "C1", {"G1"}, sats, strategy="hops")
+    dist = find_route(edges, "C1", {"G1"}, sats, strategy="distance")
+    assert hops == ["C1", "S3", "G1"]
+    assert dist == ["C1", "S1", "S2", "G1"]
+
+
+def test_alternate_routes_node_disjoint():
+    from calc.routing import find_alternate_routes
+
+    edges = [
+        ["C1", "S1", 100],
+        ["S1", "G1", 100],
+        ["C1", "S2", 100],
+        ["S2", "G1", 100],
+        ["C1", "S3", 100],
+        ["S3", "G1", 100],
+    ]
+    alts = find_alternate_routes(edges, "C1", {"G1"}, {"S1", "S2", "S3"}, k=3)
+    assert len(alts) == 3
+    mids = [set(a["path"][1:-1]) for a in alts]
+    assert mids[0].isdisjoint(mids[1])
+    assert mids[0].isdisjoint(mids[2])
+    assert mids[1].isdisjoint(mids[2])
+
+
+def test_strategies_same_reachability():
+    from calc.simulation import analyze_timestep
+
+    s = load(SCENARIO)
+    a = analyze_timestep(s, 0.0, strategy="hops")
+    b = analyze_timestep(s, 0.0, strategy="distance")
+    for cid in a["routes"]:
+        assert a["routes"][cid]["reachable"] == b["routes"][cid]["reachable"]
+    assert a["routes"]["C65"].get("alternates")
