@@ -14,6 +14,8 @@ type Props = {
   analysis: SnapshotAnalysis
   path: string[]
   pathSet: Set<string>
+  alternatePaths?: string[][]
+  altIndex?: number
   clientId: string
   onSelectClient: (id: string) => void
   selectedSatId: string | null
@@ -31,6 +33,8 @@ export function Map2DView({
   analysis,
   path,
   pathSet,
+  alternatePaths = [],
+  altIndex = 0,
   clientId,
   onSelectClient,
   selectedSatId,
@@ -109,6 +113,21 @@ export function Map2DView({
     }
   }
 
+  const ghostAltSegs: [number, number][][][] = []
+  if (showNetwork) {
+    for (let ai = 0; ai < alternatePaths.length; ai++) {
+      if (ai === altIndex) continue
+      const ap = alternatePaths[ai]
+      const segs: [number, number][][] = []
+      for (let i = 0; i < ap.length - 1; i++) {
+        const pa = posOf(ap[i])
+        const pb = posOf(ap[i + 1])
+        if (pa && pb) segs.push([pa, pb])
+      }
+      if (segs.length) ghostAltSegs.push(segs)
+    }
+  }
+
   const dimOthers = Boolean(selectedSatId)
 
   return (
@@ -184,6 +203,25 @@ export function Map2DView({
                 }}
               />
             ))}
+        </Pane>
+      )}
+      {showNetwork && (
+        <Pane name="alt-routes" style={{ zIndex: 445 }}>
+          {ghostAltSegs.map((segs, gi) =>
+            segs.map((positions, i) => (
+              <Polyline
+                key={`alt-${gi}-${i}`}
+                positions={positions}
+                pathOptions={{
+                  color: '#adb5bd',
+                  weight: 2,
+                  opacity: 0.55,
+                  dashArray: '6 6',
+                  interactive: false,
+                }}
+              />
+            )),
+          )}
         </Pane>
       )}
       {showNetwork && (

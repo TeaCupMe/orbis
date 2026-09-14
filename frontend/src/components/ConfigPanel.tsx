@@ -18,10 +18,18 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
   const [launchStage, setLaunchStage] = useState(scenario.design.launch_stage)
   const [planes, setPlanes] = useState(scenario.design.planes.map((p) => ({ ...p })))
   const [failures, setFailures] = useState(scenario.failures.map((f) => ({ ...f })))
+  const [gatewayOutages, setGatewayOutages] = useState(
+    scenario.gateway_outages.map((f) => ({ ...f })),
+  )
   const [sites, setSites] = useState(scenario.ground_sites.map((g) => ({ ...g })))
   const [satId, setSatId] = useState(scenario.design.satellites[0]?.id ?? '')
   const [failStart, setFailStart] = useState(21600)
   const [failEnd, setFailEnd] = useState(86400)
+  const [gwId, setGwId] = useState(
+    scenario.ground_sites.find((g) => g.role === 'gateway')?.id ?? '',
+  )
+  const [gwStart, setGwStart] = useState(21600)
+  const [gwEnd, setGwEnd] = useState(43200)
   const [failProb, setFailProb] = useState(scenario.environment.failure_probability ?? 0)
   const [stepS, setStepS] = useState(scenario.environment.step_s)
   const [islRangeKm, setIslRangeKm] = useState(scenario.environment.isl_range_km)
@@ -30,8 +38,10 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
     setLaunchStage(scenario.design.launch_stage)
     setPlanes(scenario.design.planes.map((p) => ({ ...p })))
     setFailures(scenario.failures.map((f) => ({ ...f })))
+    setGatewayOutages(scenario.gateway_outages.map((f) => ({ ...f })))
     setSites(scenario.ground_sites.map((g) => ({ ...g })))
     setSatId(scenario.design.satellites[0]?.id ?? '')
+    setGwId(scenario.ground_sites.find((g) => g.role === 'gateway')?.id ?? '')
     setFailProb(scenario.environment.failure_probability ?? 0)
     setStepS(scenario.environment.step_s)
     setIslRangeKm(scenario.environment.isl_range_km)
@@ -39,6 +49,7 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
 
   const clientCount = sites.filter((s) => s.role === 'client').length
   const gatewayCount = sites.filter((s) => s.role === 'gateway').length
+  const gatewayOptions = sites.filter((g) => g.role === 'gateway')
 
   const canRemove = (g: GroundSite) => {
     if (g.role === 'client') return clientCount > 1
@@ -328,6 +339,58 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
         {!failures.length && <li className="muted">Нет отказов</li>}
       </ul>
 
+      <h3>Недоступность шлюзов</h3>
+      <p className="muted tiny">Интервал [start_s; end_s) — шлюз не принимает трафик.</p>
+      <div className="row wrap">
+        <select value={gwId} onChange={(e) => setGwId(e.target.value)} disabled={!gatewayOptions.length}>
+          {gatewayOptions.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.id}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          value={gwStart}
+          onChange={(e) => setGwStart(Number(e.target.value))}
+          title="start_s"
+        />
+        <input
+          type="number"
+          value={gwEnd}
+          onChange={(e) => setGwEnd(Number(e.target.value))}
+          title="end_s"
+        />
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={!gwId}
+          onClick={() =>
+            setGatewayOutages([
+              ...gatewayOutages,
+              { gateway_id: gwId, start_s: gwStart, end_s: gwEnd },
+            ])
+          }
+        >
+          Добавить
+        </button>
+      </div>
+      <ul className="failure-list">
+        {gatewayOutages.map((f, i) => (
+          <li key={`${f.gateway_id}-${i}`}>
+            {f.gateway_id}: [{f.start_s}; {f.end_s})
+            <button
+              type="button"
+              className="linkish"
+              onClick={() => setGatewayOutages(gatewayOutages.filter((_, j) => j !== i))}
+            >
+              удалить
+            </button>
+          </li>
+        ))}
+        {!gatewayOutages.length && <li className="muted">Нет outage шлюзов</li>}
+      </ul>
+
       <div className="row">
         <button
           type="button"
@@ -336,6 +399,7 @@ export function ConfigPanel({ scenario, onApply, onReset }: Props) {
             void onApply({
               design: { launch_stage: launchStage, planes },
               failures,
+              gateway_outages: gatewayOutages,
               ground_sites: sites,
               environment: {
                 failure_probability: failProb,

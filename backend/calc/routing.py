@@ -1,17 +1,22 @@
 """
 Маршрутизация client → спутники → gateway по снимку сети.
 
-Алгоритм: BFS по числу рёбер (минимум hops). Дистанции на рёбрах —
-только для отображения, на выбор пути не влияют.
+Стратегии:
+  hops     — BFS, минимум числа рёбер (по умолчанию)
+  distance — Dijkstra, минимум суммарной длины рёбер (км)
 
-NOTE: чтобы сменить стратегию (Dijkstra по длине, k-shortest и т.п.),
-замените find_route(); classify_outage можно оставить.
+Дополнительно: запасные (node-disjoint) пути и сравнение стратегий
+на одном снимке. classify_outage не зависит от стратегии.
 """
 
 from __future__ import annotations
 
+import heapq
 from collections import defaultdict, deque
-from typing import Any
+from typing import Any, Literal
+
+RoutingStrategy = Literal["hops", "distance"]
+STRATEGIES: tuple[RoutingStrategy, ...] = ("hops", "distance")
 
 
 def build_adjacency(edges: list[list]) -> dict[str, list[tuple[str, float]]]:
@@ -23,32 +28,70 @@ def build_adjacency(edges: list[list]) -> dict[str, list[tuple[str, float]]]:
     return adj
 
 
-def find_route(
+def _edge_allowed(
+    node: str,
+    nxt: str,
+    gateway_ids: set[str],
+    satellite_ids: set[str],
+    blocked: set[str],
+) -> bool:
+    """Правила расширения: client→sat|gw, sat→sat|gw; промежуточные — только КА."""
+    if nxt in blocked:
+        return False
+    if node in gateway_ids and node not in satellite_ids:
+        return False
+    if node not in gateway_ids and node not in satellite_ids:
+        # client (или иной ground): только на КА или gateway
+        return nxt in satellite_ids or nxt in gateway_ids
+    if node in satellite_ids:
+        return nxt in satellite_ids or nxt in gateway_ids
+    return False
+
+
+def _reconstruct(parent: dict[str, str | None], found: str) -> list[str]:
+    path: list[str] = []
+    cur: str | None = found
+    while cur is not None:
+        path.append(cur)
+        cur = parent[cur]
+    path.reverse()
+    return path
+
+
+def path_length_km(edges: list[list], path: list[str]) -> float | None:
+    """Сумма distance_km по рёбрам пути; None если ребра нет в графе."""
+    if len(path) < 2:
+        return 0.0 if path else None
+    dist_map: dict[frozenset[str], float] = {}
+    for a, b, d in edges:
+        dist_map[frozenset((a, b))] = float(d)
+    total = 0.0
+    for i in range(len(path) - 1):
+        key = frozenset((path[i], path[i + 1]))
+        if key not in dist_map:
+            return None
+        total += dist_map[key]
+    return total
+
+
+def find_route_hops(
     edges: list[list],
     client_id: str,
     gateway_ids: set[str],
     satellite_ids: set[str],
+    *,
+    blocked: set[str] | None = None,
 ) -> list[str] | None:
-    """
-    Кратчайший (по hops) путь client → … → gateway.
-
-    Ограничения модели:
-    - промежуточные узлы — только спутники (наземные пункты не ретранслируют);
-    - путь обязан начинаться в client_id и заканчиваться в одном из gateway_ids;
-    - рёбра client–gateway напрямую допустимы, если есть в edges (редко).
-
-    Возвращает список id узлов [client, ..., gateway] или None.
-    """
+    """Кратчайший путь по числу hops (BFS)."""
     if not gateway_ids:
         return None
+    blocked = blocked or set()
     adj = build_adjacency(edges)
     if client_id not in adj:
         return None
 
-    # BFS: состояние = текущий узел; parent для восстановления пути
     parent: dict[str, str | None] = {client_id: None}
     queue: deque[str] = deque([client_id])
-
     found: str | None = None
     while queue:
         node = queue.popleft()
@@ -58,30 +101,169 @@ def find_route(
         for nxt, _dist in adj[node]:
             if nxt in parent:
                 continue
-            # С client можно идти на КА или сразу на gateway.
-            # С КА — на другой КА или на gateway. С gateway дальше не идём.
-            if node == client_id:
-                if nxt not in satellite_ids and nxt not in gateway_ids:
-                    continue
-            elif node in satellite_ids:
-                if nxt not in satellite_ids and nxt not in gateway_ids:
-                    continue
-            else:
-                # оказались на gateway в середине — не расширяем
+            if not _edge_allowed(node, nxt, gateway_ids, satellite_ids, blocked):
                 continue
             parent[nxt] = node
             queue.append(nxt)
 
     if found is None:
         return None
+    return _reconstruct(parent, found)
 
-    path: list[str] = []
-    cur: str | None = found
-    while cur is not None:
-        path.append(cur)
-        cur = parent[cur]
-    path.reverse()
-    return path
+
+def find_route_distance(
+    edges: list[list],
+    client_id: str,
+    gateway_ids: set[str],
+    satellite_ids: set[str],
+    *,
+    blocked: set[str] | None = None,
+) -> list[str] | None:
+    """Кратчайший путь по суммарной длине рёбер, км (Dijkstra)."""
+    if not gateway_ids:
+        return None
+    blocked = blocked or set()
+    adj = build_adjacency(edges)
+    if client_id not in adj:
+        return None
+
+    dist: dict[str, float] = {client_id: 0.0}
+    parent: dict[str, str | None] = {client_id: None}
+    heap: list[tuple[float, str]] = [(0.0, client_id)]
+    found: str | None = None
+    found_d = float("inf")
+
+    while heap:
+        d, node = heapq.heappop(heap)
+        if d > dist.get(node, float("inf")):
+            continue
+        if node in gateway_ids and node != client_id:
+            found = node
+            found_d = d
+            break
+        for nxt, w in adj[node]:
+            if not _edge_allowed(node, nxt, gateway_ids, satellite_ids, blocked):
+                continue
+            nd = d + w
+            if nd < dist.get(nxt, float("inf")):
+                dist[nxt] = nd
+                parent[nxt] = node
+                heapq.heappush(heap, (nd, nxt))
+
+    if found is None or found_d == float("inf"):
+        return None
+    return _reconstruct(parent, found)
+
+
+def find_route(
+    edges: list[list],
+    client_id: str,
+    gateway_ids: set[str],
+    satellite_ids: set[str],
+    strategy: RoutingStrategy = "hops",
+    *,
+    blocked: set[str] | None = None,
+) -> list[str] | None:
+    """
+    Допустимый путь client → … → gateway.
+
+    Ограничения модели:
+    - промежуточные узлы — только спутники;
+    - путь обязан начинаться в client_id и заканчиваться в одном из gateway_ids;
+    - рёбра client–gateway напрямую допустимы, если есть в edges.
+    """
+    if strategy == "distance":
+        return find_route_distance(
+            edges, client_id, gateway_ids, satellite_ids, blocked=blocked
+        )
+    return find_route_hops(
+        edges, client_id, gateway_ids, satellite_ids, blocked=blocked
+    )
+
+
+def route_meta(
+    edges: list[list],
+    path: list[str] | None,
+    strategy: RoutingStrategy,
+) -> dict[str, Any]:
+    """Метрики одного маршрута для UI/API."""
+    if not path:
+        return {
+            "path": [],
+            "hops": None,
+            "length_km": None,
+            "strategy": strategy,
+        }
+    return {
+        "path": path,
+        "hops": len(path) - 1,
+        "length_km": path_length_km(edges, path),
+        "strategy": strategy,
+    }
+
+
+def find_alternate_routes(
+    edges: list[list],
+    client_id: str,
+    gateway_ids: set[str],
+    satellite_ids: set[str],
+    strategy: RoutingStrategy = "hops",
+    k: int = 3,
+) -> list[dict[str, Any]]:
+    """
+    До k маршрутов с попарно непересекающимися промежуточными КА
+    (node-disjoint по спутникам). Первый — основной по выбранной стратегии;
+    следующие ищутся после блокировки промежуточных узлов предыдущих путей.
+    """
+    k = max(1, min(int(k), 5))
+    blocked: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for _ in range(k):
+        path = find_route(
+            edges,
+            client_id,
+            gateway_ids,
+            satellite_ids,
+            strategy=strategy,
+            blocked=blocked,
+        )
+        if not path:
+            break
+        meta = route_meta(edges, path, strategy)
+        meta["index"] = len(out)
+        meta["disjoint"] = True
+        out.append(meta)
+        # Блокируем промежуточные КА, чтобы следующий путь был запасным
+        blocked |= {n for n in path[1:-1] if n in satellite_ids}
+    return out
+
+
+def compare_strategies_snapshot(
+    edges: list[list],
+    client_id: str,
+    gateway_ids: set[str],
+    satellite_ids: set[str],
+) -> dict[str, Any]:
+    """Сравнение hops vs distance на одном снимке для одного клиента."""
+    result: dict[str, Any] = {}
+    for strat in STRATEGIES:
+        path = find_route(edges, client_id, gateway_ids, satellite_ids, strategy=strat)
+        result[strat] = route_meta(edges, path, strat)
+        result[strat]["reachable"] = path is not None
+    same = (
+        result["hops"]["path"] == result["distance"]["path"]
+        if result["hops"]["reachable"] and result["distance"]["reachable"]
+        else None
+    )
+    return {
+        "client_id": client_id,
+        "strategies": result,
+        "paths_identical": same,
+        "note": (
+            "Достижимость одинакова: обе стратегии находят путь тогда и только тогда, "
+            "когда граф связен. Различаются hops и длина пути."
+        ),
+    }
 
 
 def classify_outage(
@@ -167,4 +349,9 @@ OUTAGE_LABELS_RU = {
     "no_gateway_contact": "Нет контакта со шлюзом",
     "gateway_unavailable": "Шлюз недоступен",
     "unknown": "Маршрут не найден",
+}
+
+STRATEGY_LABELS_RU = {
+    "hops": "Минимум hops (BFS)",
+    "distance": "Минимум длины (Dijkstra)",
 }

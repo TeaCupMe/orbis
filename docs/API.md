@@ -32,11 +32,12 @@
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| POST | `/api/simulate` | полный прогон; тело `{ "seed": null\|int }` опционально; ответ с metrics / availability / series + `result_id` |
+| POST | `/api/simulate` | полный прогон; тело `{ "seed": null\|int, "strategy": "hops"\|"distance" }` опционально; ответ с metrics / availability / series + `result_id` |
 | GET | `/api/simulation` | последний compact-результат сессии |
 | GET | `/api/results/{id}` | полный `cosmo-A-result-1.0` |
 | GET | `/api/results/{id}/download` | attachment |
-| POST | `/api/snapshot` | `{ t_s, client_id? }` → snapshot + routes + ground_sites |
+| POST | `/api/snapshot` | `{ t_s, client_id?, seed?, strategy?, alternate_k? }` → snapshot + routes (+ alternates) + ground_sites |
+| POST | `/api/routing/compare` | `{ t_s, client_id, seed? }` → сравнение hops vs distance на снимке |
 | POST | `/api/coverage` | `{ t_s, lat_step_deg?, lon_step_deg? }` → теплокарта мгновенного покрытия |
 | POST | `/api/compare` | `{ variant_a, variant_b, seed? }` → metrics + param_diff + recommendation |
 

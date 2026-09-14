@@ -159,6 +159,32 @@ select {
   justify-content: flex-end;
 }
 
+.seed-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.seed-field input {
+  width: 4.2rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg2);
+  color: var(--ink);
+}
+
+.routing-hint {
+  margin: 0;
+  padding: 0.35rem 0.85rem 0.45rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(13, 27, 38, 0.85);
+  flex-shrink: 0;
+}
+
 .btn,
 .file-btn {
   border: none;

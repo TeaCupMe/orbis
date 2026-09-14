@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Api,
   type CoverageGrid,
+  type RoutingStrategy,
   type SnapshotAnalysis,
   type Simulation,
   type Scenario,
@@ -17,6 +18,11 @@ type Props = {
   analysis: SnapshotAnalysis
   clientId: string
   path: string[]
+  alternatePaths: string[][]
+  altIndex: number
+  onAltIndexChange: (i: number) => void
+  routingStrategy: RoutingStrategy
+  onStrategyChange: (s: RoutingStrategy) => void
   t_s: number
   step_s: number
   horizon_s: number
@@ -34,6 +40,11 @@ export function ConstellationViewer({
   analysis,
   clientId,
   path,
+  alternatePaths,
+  altIndex,
+  onAltIndexChange,
+  routingStrategy,
+  onStrategyChange,
   t_s,
   step_s,
   horizon_s,
@@ -64,6 +75,9 @@ export function ConstellationViewer({
     }
     return edges
   }, [path])
+
+  const otherStrategy = analysis.routes[clientId]?.other_strategy
+  const altCount = alternatePaths.length
 
   const onSelectSat = (id: string) => {
     setSelectedSatId((prev) => (prev === id ? null : id))
@@ -196,13 +210,67 @@ export function ConstellationViewer({
             <span className="label-short">Покр.</span>
           </button>
         </div>
+        {viewLayer === 'network' && (
+          <>
+            <div className="toggle" title="Стратегия поиска маршрута">
+              <button
+                type="button"
+                className={routingStrategy === 'hops' ? 'active' : ''}
+                onClick={() => onStrategyChange('hops')}
+              >
+                BFS
+              </button>
+              <button
+                type="button"
+                className={routingStrategy === 'distance' ? 'active' : ''}
+                onClick={() => onStrategyChange('distance')}
+              >
+                Dijkstra
+              </button>
+            </div>
+            {altCount > 1 && (
+              <div className="toggle" title="Запасные node-disjoint пути">
+                {alternatePaths.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className={altIndex === i ? 'active' : ''}
+                    onClick={() => onAltIndexChange(i)}
+                  >
+                    {i === 0 ? 'осн.' : `+${i}`}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
+      {viewLayer === 'network' && otherStrategy && (
+        <p className="routing-hint muted tiny">
+          {routingStrategy === 'hops' ? 'BFS: минимум hops' : 'Dijkstra: минимум длины, км'}
+          {otherStrategy.reachable
+            ? ` · другая стратегия: hops ${otherStrategy.hops ?? '—'}, ${
+                otherStrategy.length_km != null
+                  ? `${otherStrategy.length_km.toFixed(0)} км`
+                  : '—'
+              }${
+                otherStrategy.path.join('→') === path.join('→') ? ' (тот же путь)' : ''
+              }`
+            : ' · другая стратегия: нет пути'}
+          {altCount > 1 ? ` · независимых путей: ${altCount}` : ''}
+          {simulation && simulation.routing_strategy !== routingStrategy
+            ? ' · перезапустите расчёт, чтобы обновить суточные метрики'
+            : ''}
+        </p>
+      )}
       <div className="viewer-stage">
         {mode === '2d' ? (
           <Map2DView
             analysis={analysis}
             path={path}
             pathSet={pathSet}
+            alternatePaths={alternatePaths}
+            altIndex={altIndex}
             clientId={clientId}
             onSelectClient={onSelectClient}
             selectedSatId={selectedSatId}
